@@ -1,0 +1,21 @@
+[Unit]
+Description=Alaap Chat Application Service
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=darpanserver
+Group=darpanserver
+WorkingDirectory=/home/darpanserver/alaap/backend
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/darpanserver/alaap/backend/.env
+
+# Standard output/error logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alaap
+
+[Install]
+WantedBy=multi-user.target
