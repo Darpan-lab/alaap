@@ -5,7 +5,7 @@ import {
   Settings, Shield, Trash2, Key, FileText, Download, Users, X, 
   Loader2, UploadCloud, Check, CheckCheck, Lock, ToggleLeft, ToggleRight, Sparkles, ChevronRight, Edit, ArrowLeft, ArrowLeftRight,
   Smile, Mic, Play, Pause, CornerUpLeft, Ban, Unlock, MoreVertical, Tv, Eye, EyeOff, UserMinus, PanelLeftClose, PanelLeftOpen, Info,
-  Volume2, VolumeX, Maximize, Minimize
+  Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff
 } from 'lucide-react';
 import { API_BASE_URL, SOCKET_URL } from './config';
 import './App.css';
@@ -283,6 +283,7 @@ const VideoPlayerModal = ({ video, onClose }) => {
   const handleLoadedMetadata = () => {
     if (!videoRef.current) return;
     setDuration(videoRef.current.duration);
+    videoRef.current.playbackRate = playbackRate;
   };
 
   const handleSliderChange = (e) => {
@@ -653,8 +654,11 @@ const VideoPlayerModal = ({ video, onClose }) => {
                   }}
                 >
                   <option value="0.5" style={{ background: '#131520', color: '#fff' }}>0.5x</option>
-                  <option value="1" style={{ background: '#131520', color: '#fff' }}>1.0x</option>
+                  <option value="0.75" style={{ background: '#131520', color: '#fff' }}>0.75x</option>
+                  <option value="1" style={{ background: '#131520', color: '#fff' }}>1.0x (Normal)</option>
+                  <option value="1.25" style={{ background: '#131520', color: '#fff' }}>1.25x</option>
                   <option value="1.5" style={{ background: '#131520', color: '#fff' }}>1.5x</option>
+                  <option value="1.75" style={{ background: '#131520', color: '#fff' }}>1.75x</option>
                   <option value="2" style={{ background: '#131520', color: '#fff' }}>2.0x</option>
                 </select>
               </div>
@@ -721,6 +725,7 @@ function App() {
   // Authentication State
   const [token, setToken] = useState(localStorage.getItem('alaap_token') || '');
   const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(!!localStorage.getItem('alaap_token'));
 
   // Width Resizing States
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default sidebar width
@@ -817,6 +822,7 @@ function App() {
   // File Upload State
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isSharingFrame, setIsSharingFrame] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
@@ -854,15 +860,361 @@ function App() {
     inviteOnlyEnabled: false
   });
 
-  // Profile Settings State
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileUsername, setProfileUsername] = useState('');
-  const [profilePassword, setProfilePassword] = useState('');
-  const [profilePicUrl, setProfilePicUrl] = useState('');
-  const [profileError, setProfileError] = useState('');
-  const [profileSuccess, setProfileSuccess] = useState('');
-  const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
-  const profilePicFileInputRef = useRef(null);
+  // Settings Pane State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Notification system states
+  const [notificationSettings, setNotificationSettings] = useState(() => {
+    const defaults = {
+      userChats: { soundEnabled: true, inAppBannerEnabled: true, desktopEnabled: true },
+      groupChats: { soundEnabled: true, inAppBannerEnabled: true, desktopEnabled: true }
+    };
+    try {
+      const stored = localStorage.getItem('alaap_notification_settings');
+      if (!stored) return defaults;
+      const parsed = JSON.parse(stored);
+      return {
+        userChats: { ...defaults.userChats, ...(parsed?.userChats || {}) },
+        groupChats: { ...defaults.groupChats, ...(parsed?.groupChats || {}) }
+      };
+    } catch (e) {
+      return defaults;
+    }
+  });
+
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const stored = localStorage.getItem('alaap_notifications');
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    localStorage.setItem('alaap_notification_settings', JSON.stringify(notificationSettings));
+  }, [notificationSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('alaap_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Request browser desktop notification permission
+  const requestNotificationPermission = async (chatType) => {
+    if (!('Notification' in window)) {
+      alert('This browser does not support desktop notifications.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setNotificationSettings(prev => ({
+        ...prev,
+        [chatType]: {
+          ...prev[chatType],
+          desktopEnabled: true
+        }
+      }));
+    } else {
+      alert('Permission for desktop notifications was denied. You may need to enable them in your browser settings.');
+      setNotificationSettings(prev => ({
+        ...prev,
+        [chatType]: {
+          ...prev[chatType],
+          desktopEnabled: false
+        }
+      }));
+    }
+  };
+
+  // Web Audio API Synthesised Chime Sound
+  const playNotificationSound = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime);
+      gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.15);
+      
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880.00, ctx.currentTime + 0.08);
+      gain2.gain.setValueAtTime(0.08, ctx.currentTime + 0.08);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08 + 0.2);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.08);
+      osc2.stop(ctx.currentTime + 0.08 + 0.2);
+    } catch (e) {
+      console.warn('Sound playback blocked or unsupported', e);
+    }
+  };
+
+  const addToast = (toast) => {
+    const id = Date.now() + Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { ...toast, id }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const addNotificationToHistory = (notification) => {
+    const newNotification = {
+      id: Date.now() + Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      read: false,
+      ...notification
+    };
+    setNotifications(prev => [newNotification, ...prev].slice(0, 50));
+  };
+
+  const isChatMuted = (chat) => {
+    if (!chat || !chat.mutedBy) return false;
+    const currentId = (user?.id || user?._id)?.toString();
+    return chat.mutedBy.some(id => (id._id || id).toString() === currentId);
+  };
+
+  const handleToggleMuteChat = async (chatId) => {
+    if (!token) return;
+    const chat = chats.find(c => c._id === chatId);
+    if (!chat) return;
+
+    const isMuted = isChatMuted(chat);
+    const endpoint = isMuted ? 'unmute' : 'mute';
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/chats/${chatId}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.chat) {
+          setChats(prev => prev.map(c => c._id === chatId ? data.chat : c));
+          if (activeChat && activeChat._id === chatId) {
+            setActiveChat(data.chat);
+          }
+        }
+        showAlert(`Notifications ${isMuted ? 'unmuted' : 'muted'} for this chat.`, 'Notification Settings');
+      } else {
+        const errorData = await response.json();
+        showAlert(errorData.error || `Failed to modify notification settings.`, 'Error');
+      }
+    } catch (err) {
+      console.error(`Error toggling mute status:`, err);
+      showAlert(`Network error while modifying notification settings.`, 'Error');
+    }
+  };
+
+  const triggerNotificationAlert = (chat, message) => {
+    if (chat && isChatMuted(chat)) {
+      console.log('Chat is muted, skipping notifications.');
+      return;
+    }
+
+    const isGroup = chat ? chat.isGroup : false;
+    const chatType = isGroup ? 'groupChats' : 'userChats';
+    const config = notificationSettings[chatType];
+
+    if (config.soundEnabled) {
+      playNotificationSound();
+    }
+
+    const senderUsername = message.sender?.username || 'Someone';
+    const chatName = chat ? (chat.isGroup ? chat.name : senderUsername) : senderUsername;
+    const title = chat?.isGroup ? `${chatName} (${senderUsername})` : senderUsername;
+    const contentText = message.content || (message.fileUrl ? '📁 Attachment' : 'New message');
+    
+    addNotificationToHistory({
+      type: 'message',
+      title: chatName,
+      message: `${senderUsername}: ${contentText}`,
+      chatId: message.chat
+    });
+
+    if (config.inAppBannerEnabled) {
+      addToast({
+        title: chatName,
+        message: `${senderUsername}: ${contentText}`,
+        avatar: message.sender?.profilePic || '',
+        onClick: () => {
+          const targetChat = chatsRef.current.find(c => c._id === message.chat);
+          if (targetChat) setActiveChat(targetChat);
+        }
+      });
+    }
+
+    if (config.desktopEnabled && Notification.permission === 'granted') {
+      const notification = new Notification(title, {
+        body: contentText,
+        icon: '/favicon.ico',
+        tag: message.chat
+      });
+      notification.onclick = () => {
+        window.focus();
+        const targetChat = chatsRef.current.find(c => c._id === message.chat);
+        if (targetChat) setActiveChat(targetChat);
+        notification.close();
+      };
+    }
+  };
+
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const clearNotificationHistory = () => {
+    setNotifications([]);
+  };
+
+  // PWA installation state
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Handle PWA automatic update detection and force reload
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      let refreshing = false;
+      const handleControllerChange = () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+      return () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      };
+    }
+  }, []);
+
+  // Track if fullscreen mode is active
+  const [isFullscreenActive, setIsFullscreenActive] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreenActive(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Handle automatic cache reset on client version update
+  useEffect(() => {
+    const checkVersionAndResetCache = async () => {
+      const APP_VERSION = '1.0.2'; // Increment this value on code updates
+      window.APP_VERSION = APP_VERSION; // Expose globally for console access
+      const storedVersion = localStorage.getItem('alaap_app_version');
+      
+      if (storedVersion && storedVersion !== APP_VERSION) {
+        console.log(`[Version Check] Mismatch: Local=${storedVersion}, Build=${APP_VERSION}. Wiping cache...`);
+        
+        try {
+          // 1. Unregister all active service workers
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+              await registration.unregister();
+              console.log('[Version Check] Service worker unregistered.');
+            }
+          }
+          
+          // 2. Clear all cache namespaces in Cache Storage
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            for (let name of cacheNames) {
+              await caches.delete(name);
+              console.log(`[Version Check] Cache storage namespace deleted: ${name}`);
+            }
+          }
+          
+          // Update version token
+          localStorage.setItem('alaap_app_version', APP_VERSION);
+          
+          // 3. Force clean page reload
+          window.location.reload();
+        } catch (error) {
+          console.error('[Version Check] Cache reset error:', error);
+        }
+      } else if (!storedVersion) {
+        // Fresh client load: set current build version
+        localStorage.setItem('alaap_app_version', APP_VERSION);
+      }
+    };
+
+    checkVersionAndResetCache();
+  }, []);
+
+  // Automatically request desktop notification permissions on startup
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      const timer = setTimeout(async () => {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            console.log('[Notification] Permission granted automatically on startup.');
+            setNotificationSettings(prev => {
+              const updated = {
+                ...prev,
+                userChats: { ...prev.userChats, desktopEnabled: true },
+                groupChats: { ...prev.groupChats, desktopEnabled: true }
+              };
+              localStorage.setItem('alaap_notification_settings', JSON.stringify(updated));
+              return updated;
+            });
+          } else {
+            console.log('[Notification] Permission denied/dismissed.');
+            setNotificationSettings(prev => {
+              const updated = {
+                ...prev,
+                userChats: { ...prev.userChats, desktopEnabled: false },
+                groupChats: { ...prev.groupChats, desktopEnabled: false }
+              };
+              localStorage.setItem('alaap_notification_settings', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        } catch (error) {
+          console.error('[Notification] Error requesting permission on startup:', error);
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Group creation search states
   const [groupMemberSearchQuery, setGroupMemberSearchQuery] = useState('');
@@ -882,8 +1234,306 @@ function App() {
   const [groupSettingsSuccess, setGroupSettingsSuccess] = useState('');
   const groupPicFileInputRef = useRef(null);
   
-  // Image Lightbox state
+  // Image Lightbox and Annotation states
   const [previewImageUrl, setPreviewImageUrl] = useState(null);
+  const [previewImageMsg, setPreviewImageMsg] = useState(null);
+  const [isAnnotating, setIsAnnotating] = useState(false);
+  const [toolbarPos, setToolbarPos] = useState({ x: 50, y: 120 });
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [brushColor, setBrushColor] = useState('#ff4d4d');
+  const [brushSize, setBrushSize] = useState(5);
+  const [tool, setTool] = useState('draw'); // 'draw', 'erase'
+  const [history, setHistory] = useState([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const lastPos = useRef({ x: 0, y: 0 });
+  const dragStart = useRef({ x: 0, y: 0 });
+
+  const closeLightbox = () => {
+    setPreviewImageUrl(null);
+    setPreviewImageMsg(null);
+    setIsAnnotating(false);
+    setHistory([]);
+  };
+
+  const overlayMouseDownRef = useRef(false);
+
+  const handleOverlayMouseDown = (e) => {
+    overlayMouseDownRef.current = (e.target === e.currentTarget);
+  };
+
+  const handleOverlayMouseUp = (e) => {
+    if (overlayMouseDownRef.current && e.target === e.currentTarget) {
+      closeLightbox();
+    }
+    overlayMouseDownRef.current = false;
+  };
+
+  const handleMouseDown = (e) => {
+    setIsDraggingToolbar(true);
+    dragStart.current = {
+      x: e.clientX - toolbarPos.x,
+      y: e.clientY - toolbarPos.y
+    };
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      setIsDraggingToolbar(true);
+      dragStart.current = {
+        x: e.touches[0].clientX - toolbarPos.x,
+        y: e.touches[0].clientY - toolbarPos.y
+      };
+    }
+  };
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!isDraggingToolbar) return;
+
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      const x = Math.max(10, Math.min(window.innerWidth - 220, clientX - dragStart.current.x));
+      const y = Math.max(10, Math.min(window.innerHeight - 280, clientY - dragStart.current.y));
+
+      setToolbarPos({ x, y });
+    };
+
+    const handleUp = () => {
+      setIsDraggingToolbar(false);
+    };
+
+    if (isDraggingToolbar) {
+      window.addEventListener('mousemove', handleMove);
+      window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchmove', handleMove);
+      window.addEventListener('touchend', handleUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleUp);
+    };
+  }, [isDraggingToolbar]);
+
+  const handleImageLoad = () => {
+    const img = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+
+    // Clear canvas when a new image is loaded
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHistory([]);
+  };
+
+  const getCanvasCursor = () => {
+    if (tool === 'erase') {
+      const canvas = canvasRef.current;
+      if (!canvas) return 'cell';
+      const rect = canvas.getBoundingClientRect();
+      const scale = rect.width / canvas.width;
+      const screenBrushSize = Math.max(6, brushSize * scale);
+      
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${screenBrushSize + 4}" height="${screenBrushSize + 4}" viewBox="0 0 ${screenBrushSize + 4} ${screenBrushSize + 4}">
+          <circle cx="${(screenBrushSize + 4) / 2}" cy="${(screenBrushSize + 4) / 2}" r="${screenBrushSize / 2}" fill="none" stroke="white" stroke-width="1.5"/>
+          <circle cx="${(screenBrushSize + 4) / 2}" cy="${(screenBrushSize + 4) / 2}" r="${screenBrushSize / 2}" fill="none" stroke="black" stroke-width="1" stroke-dasharray="2 2"/>
+        </svg>
+      `;
+      const encoded = btoa(svg);
+      const center = (screenBrushSize + 4) / 2;
+      return `url("data:image/svg+xml;base64,${encoded}") ${center} ${center}, auto`;
+    } else {
+      // Pen tool cursor: a pencil SVG pointing to bottom-left tip (2, 22)
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" fill="rgba(0, 0, 0, 0.5)"/>
+          <path d="m15 5 4 4" stroke="white" stroke-width="2"/>
+        </svg>
+      `;
+      const encoded = btoa(svg);
+      return `url("data:image/svg+xml;base64,${encoded}") 2 22, auto`;
+    }
+  };
+
+  const getCoordinates = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
+    return { x, y };
+  };
+
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Save current canvas state to history for undo
+    const currentState = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    setHistory(prev => [...prev, currentState]);
+
+    const { x, y } = getCoordinates(e);
+    lastPos.current = { x, y };
+    setIsDrawing(true);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = tool === 'erase' ? 'rgba(0,0,0,1)' : brushColor;
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = tool === 'erase' ? 'destination-out' : 'source-over';
+    ctx.stroke();
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const { x, y } = getCoordinates(e);
+
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = tool === 'erase' ? 'rgba(0,0,0,1)' : brushColor;
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = tool === 'erase' ? 'destination-out' : 'source-over';
+    ctx.stroke();
+
+    lastPos.current = { x, y };
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const undo = () => {
+    if (history.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const previousState = history[history.length - 1];
+    ctx.putImageData(previousState, 0, 0);
+    setHistory(prev => prev.slice(0, -1));
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const currentState = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    setHistory(prev => [...prev, currentState]);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleUpdateImage = async () => {
+    if (!previewImageMsg || !canvasRef.current || !imgRef.current) return;
+    setIsUpdating(true);
+
+    try {
+      const canvas = canvasRef.current;
+      const img = imgRef.current;
+
+      const mergeCanvas = document.createElement('canvas');
+      mergeCanvas.width = img.naturalWidth;
+      mergeCanvas.height = img.naturalHeight;
+      const mergeCtx = mergeCanvas.getContext('2d');
+
+      mergeCtx.drawImage(img, 0, 0);
+      mergeCtx.drawImage(canvas, 0, 0);
+
+      mergeCanvas.toBlob(async (blob) => {
+        if (!blob) {
+          setIsUpdating(false);
+          showAlert('Failed to generate image data.', 'Error');
+          return;
+        }
+
+        const formData = new FormData();
+        const origName = previewImageMsg.fileName || 'annotated_image.png';
+        const dotIdx = origName.lastIndexOf('.');
+        const nameWithoutExt = dotIdx > -1 ? origName.substring(0, dotIdx) : origName;
+        const finalName = `${nameWithoutExt}_annotated.png`;
+
+        formData.append('file', blob, finalName);
+
+        try {
+          const response = await fetch(`${API_BASE_URL}/upload`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            body: formData
+          });
+
+          if (response.ok) {
+            const uploadData = await response.json();
+
+            socketRef.current.emit('edit_message', {
+              messageId: previewImageMsg._id,
+              fileUrl: uploadData.fileUrl,
+              fileName: uploadData.fileName,
+              fileType: uploadData.fileType,
+              fileSize: uploadData.fileSize
+            });
+
+            setPreviewImageUrl(uploadData.fileUrl);
+            setPreviewImageMsg(prev => ({
+              ...prev,
+              fileUrl: uploadData.fileUrl,
+              fileName: uploadData.fileName,
+              fileType: uploadData.fileType,
+              fileSize: uploadData.fileSize
+            }));
+
+            setIsAnnotating(false);
+            setHistory([]);
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          } else {
+            const errData = await response.json();
+            showAlert(errData.error || 'Failed to upload annotated image.', 'Error');
+          }
+        } catch (uploadErr) {
+          console.error('Error uploading annotated image:', uploadErr);
+          showAlert('Failed to send annotated image to server.', 'Error');
+        } finally {
+          setIsUpdating(false);
+        }
+      }, 'image/png');
+
+    } catch (err) {
+      console.error('Error merging images:', err);
+      showAlert('An error occurred while merging annotations.', 'Error');
+      setIsUpdating(false);
+    }
+  };
 
   // Video Popup Player state
   const [popupVideo, setPopupVideo] = useState(null);
@@ -897,22 +1547,88 @@ function App() {
   });
   const [syncPlayActive, setSyncPlayActive] = useState(false);
   const [syncPlayLayoutReversed, setSyncPlayLayoutReversed] = useState(() => {
-    return localStorage.getItem('alaap_sync_play_layout_reversed') === 'true';
+    try {
+      return localStorage.getItem('alaap_sync_play_layout_reversed') === 'true';
+    } catch (e) {
+      return false;
+    }
   });
 
   useEffect(() => {
     localStorage.setItem('alaap_sync_play_layout_reversed', syncPlayLayoutReversed);
   }, [syncPlayLayoutReversed]);
   const [syncPlayVideoId, setSyncPlayVideoId] = useState('');
+  const [syncPlayVideoUrl, setSyncPlayVideoUrl] = useState('');
+  const [syncPlayDownloadStatus, setSyncPlayDownloadStatus] = useState('idle');
+  const [syncPlayDownloadProgress, setSyncPlayDownloadProgress] = useState(0);
+  const [syncPlayDownloadError, setSyncPlayDownloadError] = useState('');
+  const videoPlayerRef = useRef(null);
   const [syncPlayIsPlaying, setSyncPlayIsPlaying] = useState(false);
   const [syncPlayInputUrl, setSyncPlayInputUrl] = useState('');
   const [isSyncPlayHeaderHidden, setIsSyncPlayHeaderHidden] = useState(false);
 
+  // Custom Video Player States
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [videoVolume, setVideoVolume] = useState(1);
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [showCustomControls, setShowCustomControls] = useState(true);
+  const controlsTimeoutRef = useRef(null);
+  const isDraggingTimelineRef = useRef(false);
+  const timelineContainerRef = useRef(null);
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const [isHoveringTimeline, setIsHoveringTimeline] = useState(false);
+  const [videoPlaybackRate, setVideoPlaybackRate] = useState(1);
+  const [isHoveringCustomVolume, setIsHoveringCustomVolume] = useState(false);
+
+  // Floating Chat States & Refs
+  const [showFloatingChat, setShowFloatingChat] = useState(false);
+  const [floatingChatInput, setFloatingChatInput] = useState('');
+  const [isHoveringFloatingChat, setIsHoveringFloatingChat] = useState(false);
+  const floatingChatFeedRef = useRef(null);
+  const [floatingChatPos, setFloatingChatPos] = useState({ left: null, top: null });
+  const [isDraggingFloatingChat, setIsDraggingFloatingChat] = useState(false);
+  const dragStartOffset = useRef({ x: 0, y: 0 });
+  const floatingChatContainerRef = useRef(null);
+  const [floatingChatSize, setFloatingChatSize] = useState({ width: 320, height: null });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartData = useRef({ startX: 0, startY: 0, startWidth: 0, startHeight: 0, startLeft: 0, startTop: 0, handleType: '' });
+
+  // SyncPlay History States
+  const [syncPlayHistory, setSyncPlayHistory] = useState([]);
+  const [showSyncPlayHistoryTab, setShowSyncPlayHistoryTab] = useState(false);
+
   useEffect(() => {
     if (!syncPlayActive) {
       setIsSyncPlayHeaderHidden(false);
+      setShowFloatingChat(false);
+      setIsHoveringFloatingChat(false);
+      setFloatingChatPos({ left: null, top: null });
+      setFloatingChatSize({ width: 320, height: null });
     }
   }, [syncPlayActive]);
+
+  useEffect(() => {
+    if (isHoveringFloatingChat) {
+      setShowCustomControls(true);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    } else if (showFloatingChat) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowCustomControls(false);
+      }, 3000);
+    }
+  }, [isHoveringFloatingChat, showFloatingChat]);
+
+  useEffect(() => {
+    if (showFloatingChat && floatingChatFeedRef.current) {
+      floatingChatFeedRef.current.scrollTop = floatingChatFeedRef.current.scrollHeight;
+    }
+  }, [messages, showFloatingChat]);
 
   const [customDialog, setCustomDialog] = useState({
     isOpen: false,
@@ -1262,98 +1978,7 @@ function App() {
     });
   };
 
-  const openProfileModal = () => {
-    if (!user) return;
-    setProfileUsername(user.username);
-    setProfilePassword('');
-    setProfilePicUrl(user.profilePic || '');
-    setProfileError('');
-    setProfileSuccess('');
-    setIsProfileModalOpen(true);
-  };
 
-  const handleProfilePicUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setUploadingProfilePic(true);
-    setProfileError('');
-    setProfileSuccess('');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setProfilePicUrl(data.fileUrl);
-        setProfileSuccess('Image uploaded! Click Save Settings to update your profile.');
-      } else {
-        setProfileError('Failed to upload profile picture.');
-      }
-    } catch (err) {
-      console.error(err);
-      setProfileError('Error uploading profile picture.');
-    } finally {
-      setUploadingProfilePic(false);
-    }
-  };
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    setProfileError('');
-    setProfileSuccess('');
-
-    const payload = {
-      profilePic: profilePicUrl
-    };
-
-    if (profilePassword.trim()) {
-      if (profilePassword.length < 6) {
-        setProfileError('Password must be at least 6 characters.');
-        return;
-      }
-      payload.password = profilePassword;
-    }
-
-    if (profileUsername.toLowerCase() !== user.username) {
-      if (profileUsername.trim().length < 3) {
-        setProfileError('Username must be at least 3 characters.');
-        return;
-      }
-      payload.username = profileUsername;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setProfileSuccess('Profile updated successfully!');
-        setUser(data.user);
-        setProfilePassword('');
-      } else {
-        setProfileError(data.error || 'Failed to update profile.');
-      }
-    } catch (err) {
-      setProfileError('Network error during profile update.');
-    }
-  };
 
   // Emoji helper functions
   const handleEmojiClick = (emoji) => {
@@ -1640,11 +2265,36 @@ function App() {
     }
   }, [token]);
 
+  // Close admin dashboard and settings center when activeChat changes
+  useEffect(() => {
+    if (activeChat) {
+      setIsAdminOpen(false);
+      setIsSettingsOpen(false);
+    }
+  }, [activeChat]);
+
   // Track activeChat in a Ref to avoid stale closures in socket event listeners
   const activeChatRef = useRef(activeChat);
+  const chatsRef = useRef(chats);
+  const prevActiveChatIdRef = useRef(null);
+  const joinedChatIdRef = useRef(null);
   useEffect(() => {
     activeChatRef.current = activeChat;
   }, [activeChat]);
+
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+
+  const syncPlayVisibilityRef = useRef({});
+
+  const changeSyncPlayActive = (active, targetChatId = null) => {
+    const chatId = targetChatId || activeChatRef.current?._id;
+    setSyncPlayActive(active);
+    if (chatId) {
+      syncPlayVisibilityRef.current[chatId] = active;
+    }
+  };
 
   // Handle Socket connections
   useEffect(() => {
@@ -1673,6 +2323,12 @@ function App() {
           return [...prev, message];
         });
         scrollToBottom();
+
+        // Trigger notifications if tab is hidden (and sender is not current user)
+        const isSelf = message.sender && (message.sender._id === user?.id || message.sender._id === user?._id);
+        if (document.hidden && !isSelf) {
+          triggerNotificationAlert(activeChatRef.current, message);
+        }
       }
       
       // Update latest message in chat list
@@ -1694,6 +2350,18 @@ function App() {
     });
 
     socket.on('message_notification', (data) => {
+      // If the message belongs to active chat, don't double trigger notifications
+      if (activeChatRef.current && data.chatId === activeChatRef.current._id && !document.hidden) {
+        return;
+      }
+      
+      const currentId = user?.id || user?._id;
+      const isSelf = data.message.sender && (data.message.sender._id === currentId || data.message.sender === currentId);
+      if (isSelf) return;
+
+      const targetChat = chatsRef.current.find(c => c._id === data.chatId);
+      triggerNotificationAlert(targetChat, data.message);
+
       setChats(prevChats => {
         const chatExists = prevChats.some(c => c._id === data.chatId);
         if (!chatExists) {
@@ -1761,6 +2429,51 @@ function App() {
     });
 
     socket.on('new_chat', (newChat) => {
+      const creatorId = typeof newChat.creator === 'object' ? newChat.creator._id : newChat.creator;
+      const currentId = user?.id || user?._id;
+      
+      if (creatorId && creatorId.toString() !== currentId?.toString()) {
+        const title = newChat.isGroup ? 'Added to Group' : 'New Chat';
+        const otherMember = newChat.members.find(m => (m._id || m).toString() !== currentId?.toString());
+        const messageText = newChat.isGroup 
+          ? `You were added to group "${newChat.name}"` 
+          : `New conversation started with ${otherMember?.username || 'someone'}`;
+
+        addNotificationToHistory({
+          type: 'chat',
+          title,
+          message: messageText,
+          chatId: newChat._id
+        });
+
+        // Trigger toast/desktop alert depending on settings
+        const config = newChat.isGroup ? notificationSettings.groupChats : notificationSettings.userChats;
+        
+        if (config.soundEnabled) {
+          playNotificationSound();
+        }
+
+        if (config.inAppBannerEnabled) {
+          addToast({
+            title,
+            message: messageText,
+            avatar: newChat.isGroup ? newChat.groupPic : (otherMember?.profilePic || ''),
+            onClick: () => setActiveChat(newChat)
+          });
+        }
+        if (config.desktopEnabled && Notification.permission === 'granted') {
+          const notification = new Notification(title, {
+            body: messageText,
+            icon: '/favicon.ico'
+          });
+          notification.onclick = () => {
+            window.focus();
+            setActiveChat(newChat);
+            notification.close();
+          };
+        }
+      }
+
       setChats(prev => {
         if (prev.some(c => c._id === newChat._id)) {
           return prev.map(c => c._id === newChat._id ? newChat : c);
@@ -1877,7 +2590,7 @@ function App() {
       });
     });
 
-    socket.on('sync_play_broadcast', ({ chatId, videoId, action, currentTime, isPlaying, senderId }) => {
+    socket.on('sync_play_broadcast', ({ chatId, videoId, videoTitle, videoUrl, downloadStatus, downloadProgress, downloadError, action, currentTime, isPlaying, senderId, history }) => {
       if (activeChatRef.current && activeChatRef.current._id === chatId) {
         // Block check
         let blockActive = false;
@@ -1892,9 +2605,46 @@ function App() {
         if (blockActive) return;
 
         setSyncPlayVideoId(videoId);
+        setSyncPlayVideoUrl(videoUrl || '');
+        setSyncPlayDownloadStatus(downloadStatus || 'idle');
+        setSyncPlayDownloadProgress(downloadProgress || 0);
+        setSyncPlayDownloadError(downloadError || '');
         setSyncPlayIsPlaying(isPlaying);
+        if (history) {
+          setSyncPlayHistory(history);
+        }
 
-        if (ytPlayerRef.current && ytPlayerReadyRef.current) {
+        if (downloadStatus === 'completed' && videoPlayerRef.current) {
+          if (senderId !== user?.id && senderId !== user?._id) {
+            ignorePlayerStateChangeRef.current = true;
+            
+            const playerTime = videoPlayerRef.current.currentTime;
+            if (Math.abs(playerTime - currentTime) > 2) {
+              videoPlayerRef.current.currentTime = currentTime;
+            }
+
+            if (action === 'play') {
+              if (videoPlayerRef.current.paused) {
+                videoPlayerRef.current.play().catch(e => console.error(e));
+              }
+            } else if (action === 'pause') {
+              if (!videoPlayerRef.current.paused) {
+                videoPlayerRef.current.pause();
+              }
+            } else if (action === 'seek') {
+              videoPlayerRef.current.currentTime = currentTime;
+            } else if (action === 'change_video') {
+              videoPlayerRef.current.currentTime = 0;
+              if (!isPlaying) {
+                videoPlayerRef.current.pause();
+              }
+            }
+            
+            setTimeout(() => {
+              ignorePlayerStateChangeRef.current = false;
+            }, 800);
+          }
+        } else if (ytPlayerRef.current && ytPlayerReadyRef.current) {
           if (senderId !== user?.id && senderId !== user?._id) {
             ignorePlayerStateChangeRef.current = true;
             
@@ -1948,11 +2698,18 @@ function App() {
           return {
             ...prev,
             syncPlay: {
+              ...prev.syncPlay,
               active: true,
               videoId,
+              videoTitle: videoTitle || prev.syncPlay?.videoTitle || '',
+              videoUrl,
+              downloadStatus,
+              downloadProgress,
+              downloadError,
               currentTime,
               isPlaying,
-              lastUpdatedBy: senderId
+              lastUpdatedBy: senderId,
+              history: history || prev.syncPlay?.history || []
             }
           };
         }
@@ -1964,11 +2721,56 @@ function App() {
           return {
             ...c,
             syncPlay: {
+              ...c.syncPlay,
               active: true,
               videoId,
+              videoTitle: videoTitle || c.syncPlay?.videoTitle || '',
+              videoUrl,
+              downloadStatus,
+              downloadProgress,
+              downloadError,
               currentTime,
               isPlaying,
-              lastUpdatedBy: senderId
+              lastUpdatedBy: senderId,
+              history: history || c.syncPlay?.history || []
+            }
+          };
+        }
+        return c;
+      }));
+    });
+
+    socket.on('sync_play_download_progress', ({ chatId, status, progress, error }) => {
+      if (activeChatRef.current && activeChatRef.current._id === chatId) {
+        setSyncPlayDownloadStatus(status);
+        setSyncPlayDownloadProgress(progress);
+        if (error) setSyncPlayDownloadError(error);
+      }
+      
+      const updateDownloadState = (prev) => {
+        if (!prev) return null;
+        const syncDetails = { 
+          ...prev.syncPlay, 
+          downloadStatus: status, 
+          downloadProgress: progress,
+          downloadError: error || ''
+        };
+        if (prev._id === chatId) {
+          return { ...prev, syncPlay: syncDetails };
+        }
+        return prev;
+      };
+      
+      setActiveChat(updateDownloadState);
+      setChats(prev => prev.map(c => {
+        if (c._id === chatId) {
+          return {
+            ...c,
+            syncPlay: {
+              ...c.syncPlay,
+              downloadStatus: status,
+              downloadProgress: progress,
+              downloadError: error || ''
             }
           };
         }
@@ -1990,17 +2792,34 @@ function App() {
         }
 
         if (blockActive) {
-          setSyncPlayActive(false);
+          changeSyncPlayActive(false, chatId);
           setSyncPlayVideoId('');
+          setSyncPlayVideoUrl('');
+          setSyncPlayDownloadStatus('idle');
+          setSyncPlayDownloadProgress(0);
+          setSyncPlayDownloadError('');
           setSyncPlayIsPlaying(false);
+          setSyncPlayHistory([]);
+          setShowSyncPlayHistoryTab(false);
         } else {
-          setSyncPlayActive(active);
+          changeSyncPlayActive(active, chatId);
           if (active) {
             setSyncPlayVideoId(syncPlay.videoId);
+            setSyncPlayVideoUrl(syncPlay.videoUrl || '');
+            setSyncPlayDownloadStatus(syncPlay.downloadStatus || 'idle');
+            setSyncPlayDownloadProgress(syncPlay.downloadProgress || 0);
+            setSyncPlayDownloadError(syncPlay.downloadError || '');
             setSyncPlayIsPlaying(syncPlay.isPlaying);
+            setSyncPlayHistory(syncPlay.history || []);
           } else {
             setSyncPlayVideoId('');
+            setSyncPlayVideoUrl('');
+            setSyncPlayDownloadStatus('idle');
+            setSyncPlayDownloadProgress(0);
+            setSyncPlayDownloadError('');
             setSyncPlayIsPlaying(false);
+            setSyncPlayHistory([]);
+            setShowSyncPlayHistoryTab(false);
           }
         }
       }
@@ -2067,7 +2886,7 @@ function App() {
               
               // If blocked, also turn off Sync Play immediately!
               if (isBlocked) {
-                setSyncPlayActive(false);
+                changeSyncPlayActive(false, c._id);
               }
             }
             return updatedChat;
@@ -2131,6 +2950,10 @@ function App() {
   useEffect(() => {
     setIsInfoPanelOpen(false);
 
+    const prevChatId = prevActiveChatIdRef.current;
+    const currentChatId = activeChat?._id || null;
+    prevActiveChatIdRef.current = currentChatId;
+
     // Compute blocked status
     let blockActive = false;
     if (activeChat && !activeChat.isGroup) {
@@ -2142,40 +2965,56 @@ function App() {
       }
     }
 
-    if (activeChat && activeChat.syncPlay && activeChat.syncPlay.active && !blockActive) {
-      setSyncPlayActive(true);
-      setSyncPlayVideoId(activeChat.syncPlay.videoId);
-      setSyncPlayIsPlaying(activeChat.syncPlay.isPlaying);
-    } else {
-      setSyncPlayActive(false);
-      setSyncPlayVideoId('');
-      setSyncPlayIsPlaying(false);
-    }
-
-    if (!activeChat) return;
-
-    if (socketRef.current) {
-      socketRef.current.emit('join_chat', activeChat._id);
-    }
-
-    // Always load messages history
-    fetchMessages(activeChat._id);
-
-    // Reset unread count for this chat in local state
-    setChats(prevChats => {
-      return prevChats.map(c => {
-        if (c._id === activeChat._id) {
-          return { ...c, unreadCount: 0 };
-        }
-        return c;
-      });
-    });
-
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.emit('leave_chat', activeChat._id);
+    // Only run initialization and fetch if we transitioned to a different chat room
+    if (prevChatId !== currentChatId) {
+      if (activeChat && activeChat.syncPlay && activeChat.syncPlay.active && !blockActive) {
+        setSyncPlayActive(syncPlayVisibilityRef.current[currentChatId] ?? false);
+        setSyncPlayVideoId(activeChat.syncPlay.videoId);
+        setSyncPlayVideoUrl(activeChat.syncPlay.videoUrl || '');
+        setSyncPlayDownloadStatus(activeChat.syncPlay.downloadStatus || 'idle');
+        setSyncPlayDownloadProgress(activeChat.syncPlay.downloadProgress || 0);
+        setSyncPlayDownloadError(activeChat.syncPlay.downloadError || '');
+        setSyncPlayIsPlaying(activeChat.syncPlay.isPlaying);
+        setSyncPlayHistory(activeChat.syncPlay.history || []);
+        setShowSyncPlayHistoryTab(false);
+      } else {
+        setSyncPlayActive(false);
+        setSyncPlayVideoId('');
+        setSyncPlayVideoUrl('');
+        setSyncPlayDownloadStatus('idle');
+        setSyncPlayDownloadProgress(0);
+        setSyncPlayDownloadError('');
+        setSyncPlayIsPlaying(false);
+        setSyncPlayHistory([]);
+        setShowSyncPlayHistoryTab(false);
       }
-    };
+
+      // Handle socket join/leave rooms based on actual room change
+      if (joinedChatIdRef.current !== currentChatId) {
+        if (joinedChatIdRef.current && socketRef.current) {
+          socketRef.current.emit('leave_chat', joinedChatIdRef.current);
+        }
+        if (currentChatId && socketRef.current) {
+          socketRef.current.emit('join_chat', currentChatId);
+        }
+        joinedChatIdRef.current = currentChatId;
+      }
+
+      if (!activeChat) return;
+
+      // Always load messages history
+      fetchMessages(activeChat._id);
+
+      // Reset unread count for this chat in local state
+      setChats(prevChats => {
+        return prevChats.map(c => {
+          if (c._id === activeChat._id) {
+            return { ...c, unreadCount: 0 };
+          }
+          return c;
+        });
+      });
+    }
   }, [activeChat]);
 
   // Scroll messages to bottom helper
@@ -2206,6 +3045,7 @@ function App() {
 
   const fetchCurrentUser = async () => {
     try {
+      setLoadingUser(true);
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -2218,10 +3058,12 @@ function App() {
     } catch (err) {
       console.error(err);
       logout();
+    } finally {
+      setLoadingUser(false);
     }
   };
 
-  const fetchChats = async () => {
+  async function fetchChats() {
     try {
       const response = await fetch(`${API_BASE_URL}/chats`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -2233,9 +3075,9 @@ function App() {
     } catch (err) {
       console.error('Error fetching chats:', err);
     }
-  };
+  }
 
-  const fetchMessages = async (chatId) => {
+  async function fetchMessages(chatId) {
     try {
       const response = await fetch(`${API_BASE_URL}/chats/${chatId}/messages`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -2351,6 +3193,173 @@ function App() {
       clearTimeout(typingTimeoutRef.current);
       socketRef.current.emit('stop_typing', { chatId: activeChat._id });
     }
+  };
+
+  const handleSendFloatingChatMessage = (e) => {
+    e?.preventDefault();
+    if (!floatingChatInput.trim() || !activeChat) return;
+
+    const messageData = {
+      chatId: activeChat._id,
+      content: floatingChatInput.trim(),
+      replyTo: null
+    };
+
+    socketRef.current?.emit('send_message', messageData);
+    setFloatingChatInput('');
+  };
+
+  const handlePointerDown = (e) => {
+    if (e.target.closest('button')) return;
+
+    const chatContainer = floatingChatContainerRef.current;
+    if (!chatContainer) return;
+    const parentContainer = chatContainer.parentElement;
+    if (!parentContainer) return;
+
+    const chatRect = chatContainer.getBoundingClientRect();
+
+    setIsDraggingFloatingChat(true);
+    dragStartOffset.current = {
+      x: e.clientX - chatRect.left,
+      y: e.clientY - chatRect.top
+    };
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDraggingFloatingChat) return;
+
+    const chatContainer = floatingChatContainerRef.current;
+    const parentContainer = chatContainer?.parentElement;
+    if (!chatContainer || !parentContainer) return;
+
+    const parentRect = parentContainer.getBoundingClientRect();
+    
+    let newLeft = e.clientX - parentRect.left - dragStartOffset.current.x;
+    let newTop = e.clientY - parentRect.top - dragStartOffset.current.y;
+
+    const maxLeft = parentRect.width - chatContainer.offsetWidth;
+    const maxTop = parentRect.height - chatContainer.offsetHeight;
+
+    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    newTop = Math.max(0, Math.min(newTop, maxTop));
+
+    setFloatingChatPos({ left: newLeft, top: newTop });
+  };
+
+  const handlePointerUp = (e) => {
+    setIsDraggingFloatingChat(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const handleResizePointerDown = (e, handleType) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const chatContainer = floatingChatContainerRef.current;
+    if (!chatContainer) return;
+    const parentContainer = chatContainer.parentElement;
+    if (!parentContainer) return;
+
+    const chatRect = chatContainer.getBoundingClientRect();
+    const parentRect = parentContainer.getBoundingClientRect();
+
+    setIsResizing(true);
+    
+    const startLeft = floatingChatPos.left !== null 
+      ? floatingChatPos.left 
+      : (parentRect.width - chatRect.width - 20);
+
+    const startTop = floatingChatPos.top !== null
+      ? floatingChatPos.top
+      : 20;
+
+    resizeStartData.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: chatContainer.offsetWidth,
+      startHeight: chatContainer.offsetHeight,
+      startLeft,
+      startTop,
+      handleType
+    };
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleResizePointerMove = (e) => {
+    if (!isResizing) return;
+
+    const chatContainer = floatingChatContainerRef.current;
+    const parentContainer = chatContainer?.parentElement;
+    if (!chatContainer || !parentContainer) return;
+
+    const parentRect = parentContainer.getBoundingClientRect();
+    const { startX, startY, startWidth, startHeight, startLeft, startTop, handleType } = resizeStartData.current;
+
+    let deltaX = e.clientX - startX;
+    let deltaY = e.clientY - startY;
+
+    let newWidth = startWidth;
+    let newHeight = startHeight;
+    let newLeft = floatingChatPos.left;
+    let newTop = floatingChatPos.top;
+
+    if (handleType === 'bottom-left') {
+      newWidth = startWidth - deltaX;
+      newHeight = startHeight + deltaY;
+      newLeft = startLeft + deltaX;
+    } else if (handleType === 'bottom-right') {
+      newWidth = startWidth + deltaX;
+      newHeight = startHeight + deltaY;
+    }
+
+    const minW = 240;
+    const maxW = 480;
+    const minH = 150;
+    const maxH = parentRect.height - 40;
+
+    if (newWidth < minW) {
+      if (handleType === 'bottom-left') {
+        newLeft = startLeft + (startWidth - minW);
+      }
+      newWidth = minW;
+    } else if (newWidth > maxW) {
+      if (handleType === 'bottom-left') {
+        newLeft = startLeft - (maxW - startWidth);
+      }
+      newWidth = maxW;
+    }
+
+    if (handleType === 'bottom-left') {
+      if (newLeft < 0) {
+        newWidth = startLeft + startWidth;
+        newLeft = 0;
+      }
+    } else {
+      if (startLeft + newWidth > parentRect.width) {
+        newWidth = parentRect.width - startLeft;
+      }
+    }
+
+    newHeight = Math.max(minH, Math.min(newHeight, maxH));
+    
+    if (startTop + newHeight > parentRect.height) {
+      newHeight = parentRect.height - startTop;
+    }
+
+    setFloatingChatSize({ width: newWidth, height: newHeight });
+    setFloatingChatPos({ 
+      left: newLeft, 
+      top: startTop 
+    });
+  };
+
+  const handleResizePointerUp = (e) => {
+    setIsResizing(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
   const startEditingMessage = (msg) => {
@@ -2562,7 +3571,7 @@ function App() {
 
   // YouTube API Player initialization hook
   useEffect(() => {
-    if (!activeChat || !syncPlayActive) {
+    if (!activeChat || !syncPlayActive || !syncPlayVideoId || syncPlayDownloadStatus === 'downloading' || syncPlayDownloadStatus === 'failed' || (syncPlayDownloadStatus === 'completed' && syncPlayVideoUrl)) {
       if (ytPlayerRef.current) {
         try {
           ytPlayerRef.current.destroy();
@@ -2599,66 +3608,70 @@ function App() {
           ytPlayerReadyRef.current = false;
         }
 
-        ytPlayerRef.current = new window.YT.Player('sync-play-yt-player', {
-          videoId: syncPlayVideoId || 'dQw4w9WgXcQ',
-          playerVars: {
-            autoplay: 0,
-            controls: 1,
-            modestbranding: 1,
-            rel: 0,
-            iv_load_policy: 3 // Turn off video annotations and pop-up promo cards
-          },
-          events: {
-            onReady: (event) => {
-              ytPlayerReadyRef.current = true;
-              const currentActiveChat = activeChatRef.current;
-              if (currentActiveChat && currentActiveChat.syncPlay) {
-                const { currentTime, isPlaying, lastUpdatedAt } = currentActiveChat.syncPlay;
-                let targetTime = currentTime || 0;
-                if (isPlaying && lastUpdatedAt) {
-                  const elapsed = (Date.now() - new Date(lastUpdatedAt).getTime()) / 1000;
-                  targetTime += elapsed;
-                }
-                ignorePlayerStateChangeRef.current = true;
-                event.target.seekTo(targetTime, true);
-                if (isPlaying) {
-                  event.target.playVideo();
-                } else {
-                  event.target.pauseVideo();
-                }
-                setTimeout(() => {
-                  ignorePlayerStateChangeRef.current = false;
-                }, 800);
-              }
+        try {
+          ytPlayerRef.current = new window.YT.Player('sync-play-yt-player', {
+            videoId: syncPlayVideoId,
+            playerVars: {
+              autoplay: 0,
+              controls: 1,
+              modestbranding: 1,
+              rel: 0,
+              iv_load_policy: 3 // Turn off video annotations and pop-up promo cards
             },
-            onStateChange: (event) => {
-              if (ignorePlayerStateChangeRef.current) return;
+            events: {
+              onReady: (event) => {
+                ytPlayerReadyRef.current = true;
+                const currentActiveChat = activeChatRef.current;
+                if (currentActiveChat && currentActiveChat.syncPlay) {
+                  const { currentTime, isPlaying, lastUpdatedAt } = currentActiveChat.syncPlay;
+                  let targetTime = currentTime || 0;
+                  if (isPlaying && lastUpdatedAt) {
+                    const elapsed = (Date.now() - new Date(lastUpdatedAt).getTime()) / 1000;
+                    targetTime += elapsed;
+                  }
+                  ignorePlayerStateChangeRef.current = true;
+                  event.target.seekTo(targetTime, true);
+                  if (isPlaying) {
+                    event.target.playVideo();
+                  } else {
+                    event.target.pauseVideo();
+                  }
+                  setTimeout(() => {
+                    ignorePlayerStateChangeRef.current = false;
+                  }, 800);
+                }
+              },
+              onStateChange: (event) => {
+                if (ignorePlayerStateChangeRef.current) return;
 
-              const state = event.data;
-              const currentTime = event.target.getCurrentTime();
-              const currentActiveChat = activeChatRef.current;
-              if (!currentActiveChat) return;
+                const state = event.data;
+                const currentTime = event.target.getCurrentTime();
+                const currentActiveChat = activeChatRef.current;
+                if (!currentActiveChat) return;
 
-              if (state === 1) { // PLAYING
-                socketRef.current?.emit('sync_play_update', {
-                  chatId: currentActiveChat._id,
-                  videoId: syncPlayVideoId,
-                  action: 'play',
-                  currentTime,
-                  isPlaying: true
-                });
-              } else if (state === 2) { // PAUSED
-                socketRef.current?.emit('sync_play_update', {
-                  chatId: currentActiveChat._id,
-                  videoId: syncPlayVideoId,
-                  action: 'pause',
-                  currentTime,
-                  isPlaying: false
-                });
+                if (state === 1) { // PLAYING
+                  socketRef.current?.emit('sync_play_update', {
+                    chatId: currentActiveChat._id,
+                    videoId: syncPlayVideoId,
+                    action: 'play',
+                    currentTime,
+                    isPlaying: true
+                  });
+                } else if (state === 2) { // PAUSED
+                  socketRef.current?.emit('sync_play_update', {
+                    chatId: currentActiveChat._id,
+                    videoId: syncPlayVideoId,
+                    action: 'pause',
+                    currentTime,
+                    isPlaying: false
+                  });
+                }
               }
             }
-          }
-        });
+          });
+        } catch (err) {
+          console.error('Failed to initialize YouTube Player iframe:', err);
+        }
       }
     };
 
@@ -2676,6 +3689,344 @@ function App() {
       clearInterval(checkYTInterval);
     };
   }, [syncPlayActive, activeChat?._id, syncPlayVideoId]);
+
+  const handleMouseMoveControls = () => {
+    setShowCustomControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowCustomControls(false);
+    }, 3000);
+  };
+
+  const handleCustomPlayerPlayPauseToggle = (e) => {
+    if (e) e.stopPropagation();
+    handlePlayerPlayPause();
+  };
+
+  const handleVideoDoubleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!videoPlayerRef.current || !videoDuration) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    
+    if (clickX < width / 2) {
+      // Left side double click -> backward 10s
+      handleSkipTime(-10);
+    } else {
+      // Right side double click -> forward 10s
+      handleSkipTime(10);
+    }
+  };
+
+  useEffect(() => {
+    if (!syncPlayActive || syncPlayDownloadStatus !== 'completed') return;
+
+    const handleKeyDown = (e) => {
+      // Safeguard: ignore keyboard shortcuts if user is typing in a text field
+      if (document.activeElement && (
+        document.activeElement.tagName === 'INPUT' || 
+        document.activeElement.tagName === 'TEXTAREA' ||
+        document.activeElement.isContentEditable
+      )) {
+        return;
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleSkipTime(10); // Forward 10s
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleSkipTime(-10); // Backward 10s
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        handleCustomPlayerPlayPauseToggle(); // Space to play/pause
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [syncPlayActive, syncPlayDownloadStatus, syncPlayVideoId, syncPlayIsPlaying, activeChat?._id, handleSkipTime]);
+
+  const handleCustomTimelineClick = (e) => {
+    if (!videoPlayerRef.current || !videoDuration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    const percentage = Math.max(0, Math.min(1, clickX / width));
+    const targetTime = percentage * videoDuration;
+
+    socketRef.current?.emit('sync_play_update', {
+      chatId: activeChat._id,
+      videoId: syncPlayVideoId,
+      action: 'seek',
+      currentTime: targetTime,
+      isPlaying: syncPlayIsPlaying
+    });
+
+    ignorePlayerStateChangeRef.current = true;
+    videoPlayerRef.current.currentTime = targetTime;
+    setVideoCurrentTime(targetTime);
+    setTimeout(() => {
+      ignorePlayerStateChangeRef.current = false;
+    }, 800);
+  };
+
+  const handleCustomTimelineMouseDown = (e) => {
+    if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
+    if (e.button !== 0) return; // Only left click
+    
+    setIsDraggingTimeline(true);
+    isDraggingTimelineRef.current = true;
+    
+    const rect = timelineContainerRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = percentage * videoDuration;
+    
+    videoPlayerRef.current.currentTime = targetTime;
+    setVideoCurrentTime(targetTime);
+  };
+
+  const handleCustomTimelineTouchStart = (e) => {
+    if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
+    
+    setIsDraggingTimeline(true);
+    isDraggingTimelineRef.current = true;
+    
+    const rect = timelineContainerRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const clickX = touch.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = percentage * videoDuration;
+    
+    videoPlayerRef.current.currentTime = targetTime;
+    setVideoCurrentTime(targetTime);
+  };
+
+  useEffect(() => {
+    if (!isDraggingTimeline) return;
+
+    const handleMouseMoveDrag = (moveEvent) => {
+      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
+      const r = timelineContainerRef.current.getBoundingClientRect();
+      const x = moveEvent.clientX - r.left;
+      const pct = Math.max(0, Math.min(1, x / r.width));
+      const t = pct * videoDuration;
+      
+      videoPlayerRef.current.currentTime = t;
+      setVideoCurrentTime(t);
+    };
+
+    const handleMouseUpDrag = (upEvent) => {
+      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) {
+        setIsDraggingTimeline(false);
+        isDraggingTimelineRef.current = false;
+        return;
+      }
+      const r = timelineContainerRef.current.getBoundingClientRect();
+      const x = upEvent.clientX - r.left;
+      const pct = Math.max(0, Math.min(1, x / r.width));
+      const t = pct * videoDuration;
+      
+      videoPlayerRef.current.currentTime = t;
+      setVideoCurrentTime(t);
+      
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime: t,
+        isPlaying: syncPlayIsPlaying
+      });
+      
+      setIsDraggingTimeline(false);
+      isDraggingTimelineRef.current = false;
+      
+      ignorePlayerStateChangeRef.current = true;
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+    };
+
+    const handleTouchMoveDrag = (moveEvent) => {
+      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
+      // Prevent scrolling when dragging on touch devices
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault();
+      }
+      const r = timelineContainerRef.current.getBoundingClientRect();
+      const touch = moveEvent.touches[0];
+      const x = touch.clientX - r.left;
+      const pct = Math.max(0, Math.min(1, x / r.width));
+      const t = pct * videoDuration;
+      
+      videoPlayerRef.current.currentTime = t;
+      setVideoCurrentTime(t);
+    };
+
+    const handleTouchEndDrag = (endEvent) => {
+      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) {
+        setIsDraggingTimeline(false);
+        isDraggingTimelineRef.current = false;
+        return;
+      }
+      const r = timelineContainerRef.current.getBoundingClientRect();
+      const touch = endEvent.changedTouches[0] || endEvent.touches[0];
+      let t = videoCurrentTime;
+      if (touch) {
+        const x = touch.clientX - r.left;
+        const pct = Math.max(0, Math.min(1, x / r.width));
+        t = pct * videoDuration;
+      }
+      
+      videoPlayerRef.current.currentTime = t;
+      setVideoCurrentTime(t);
+      
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime: t,
+        isPlaying: syncPlayIsPlaying
+      });
+      
+      setIsDraggingTimeline(false);
+      isDraggingTimelineRef.current = false;
+      
+      ignorePlayerStateChangeRef.current = true;
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+    };
+
+    document.addEventListener('mousemove', handleMouseMoveDrag);
+    document.addEventListener('mouseup', handleMouseUpDrag);
+    document.addEventListener('touchmove', handleTouchMoveDrag, { passive: false });
+    document.addEventListener('touchend', handleTouchEndDrag);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMoveDrag);
+      document.removeEventListener('mouseup', handleMouseUpDrag);
+      document.removeEventListener('touchmove', handleTouchMoveDrag);
+      document.removeEventListener('touchend', handleTouchEndDrag);
+    };
+  }, [isDraggingTimeline, videoDuration, syncPlayVideoId, syncPlayIsPlaying, activeChat?._id, videoCurrentTime]);
+
+  const handleVideoPlaybackRateChange = (rate) => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.playbackRate = rate;
+    }
+    setVideoPlaybackRate(rate);
+  };
+
+  const handleVolumeChange = (e) => {
+    const vol = parseFloat(e.target.value);
+    setVideoVolume(vol);
+    setVideoMuted(vol === 0);
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.volume = vol;
+      videoPlayerRef.current.muted = vol === 0;
+    }
+  };
+
+  const handleVolumeMuteToggle = () => {
+    const newMuted = !videoMuted;
+    setVideoMuted(newMuted);
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.muted = newMuted;
+      videoPlayerRef.current.volume = newMuted ? 0 : videoVolume;
+    }
+  };
+
+  const handleFullscreenToggle = () => {
+    if (!videoPlayerRef.current) return;
+    const video = videoPlayerRef.current;
+    if (!document.fullscreenElement) {
+      const wrapper = video.parentElement;
+      if (wrapper.requestFullscreen) {
+        wrapper.requestFullscreen();
+      } else if (wrapper.webkitRequestFullscreen) {
+        wrapper.webkitRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  const formatTimeMMSS = (timeInSecs) => {
+    if (isNaN(timeInSecs)) return '0:00';
+    const mins = Math.floor(timeInSecs / 60);
+    const secs = Math.floor(timeInSecs % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const handleVideoPlay = () => {
+    if (ignorePlayerStateChangeRef.current) return;
+    if (!activeChat || !videoPlayerRef.current) return;
+    socketRef.current?.emit('sync_play_update', {
+      chatId: activeChat._id,
+      videoId: syncPlayVideoId,
+      action: 'play',
+      currentTime: videoPlayerRef.current.currentTime,
+      isPlaying: true
+    });
+  };
+
+  const handleVideoPause = () => {
+    if (ignorePlayerStateChangeRef.current) return;
+    if (!activeChat || !videoPlayerRef.current) return;
+    socketRef.current?.emit('sync_play_update', {
+      chatId: activeChat._id,
+      videoId: syncPlayVideoId,
+      action: 'pause',
+      currentTime: videoPlayerRef.current.currentTime,
+      isPlaying: false
+    });
+  };
+
+  const handleVideoSeeked = () => {
+    if (ignorePlayerStateChangeRef.current) return;
+    if (!activeChat || !videoPlayerRef.current) return;
+    socketRef.current?.emit('sync_play_update', {
+      chatId: activeChat._id,
+      videoId: syncPlayVideoId,
+      action: 'seek',
+      currentTime: videoPlayerRef.current.currentTime,
+      isPlaying: !videoPlayerRef.current.paused
+    });
+  };
+
+  const handleVideoLoadedMetadata = (e) => {
+    const video = e.target;
+    video.playbackRate = videoPlaybackRate;
+    if (activeChat && activeChat.syncPlay) {
+      const { currentTime, isPlaying, lastUpdatedAt } = activeChat.syncPlay;
+      let targetTime = currentTime || 0;
+      if (isPlaying && lastUpdatedAt) {
+        const elapsed = (Date.now() - new Date(lastUpdatedAt).getTime()) / 1000;
+        targetTime += elapsed;
+      }
+      ignorePlayerStateChangeRef.current = true;
+      video.currentTime = targetTime;
+      if (isPlaying) {
+        video.play().catch(err => console.error(err));
+      } else {
+        video.pause();
+      }
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+    }
+  };
 
   const handleStartSyncPlay = () => {
     if (!activeChat) return;
@@ -2702,34 +4053,51 @@ function App() {
 
   const handleChangeVideo = (url) => {
     if (!url) return;
-    const videoId = extractYouTubeId(url);
-    if (!videoId) {
-      alert('Invalid YouTube URL');
-      return;
-    }
+    const targetVideoId = url.trim();
 
     socketRef.current?.emit('sync_play_update', {
       chatId: activeChat._id,
-      videoId: videoId,
+      videoId: targetVideoId,
       action: 'change_video',
       currentTime: 0,
       isPlaying: false
     });
 
-    if (ytPlayerRef.current && ytPlayerReadyRef.current) {
-      ignorePlayerStateChangeRef.current = true;
-      ytPlayerRef.current.loadVideoById(videoId, 0);
-      ytPlayerRef.current.pauseVideo();
-      setSyncPlayVideoId(videoId);
-      setSyncPlayIsPlaying(false);
-      setTimeout(() => {
-        ignorePlayerStateChangeRef.current = false;
-      }, 600);
-    }
+    setSyncPlayVideoId(targetVideoId);
+    setSyncPlayVideoUrl('');
+    setSyncPlayDownloadStatus('downloading');
+    setSyncPlayDownloadProgress(0);
+    setSyncPlayDownloadError('');
+    setSyncPlayIsPlaying(false);
     setSyncPlayInputUrl('');
   };
 
-  const handlePlayerPlayPause = () => {
+  function handlePlayerPlayPause() {
+    if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+      const isPlaying = !videoPlayerRef.current.paused;
+      const currentTime = videoPlayerRef.current.currentTime;
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: isPlaying ? 'pause' : 'play',
+        currentTime,
+        isPlaying: !isPlaying
+      });
+
+      ignorePlayerStateChangeRef.current = true;
+      if (isPlaying) {
+        videoPlayerRef.current.pause();
+        setSyncPlayIsPlaying(false);
+      } else {
+        videoPlayerRef.current.play().catch(e => console.error(e));
+        setSyncPlayIsPlaying(true);
+      }
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+      return;
+    }
+
     if (ytPlayerRef.current && ytPlayerReadyRef.current) {
       const isPlaying = ytPlayerRef.current.getPlayerState() === 1;
       const currentTime = ytPlayerRef.current.getCurrentTime();
@@ -2755,7 +4123,339 @@ function App() {
     }
   };
 
-  const handleSkipTime = (amount) => {
+  const handleSyncPlayScreenshot = async () => {
+    console.log('[SyncPlay Snapshot] Clicked Share Frame');
+    let videoId = syncPlayVideoId || (activeChat?.syncPlay?.videoId);
+    
+    if (!activeChat) return;
+
+    setIsSharingFrame(true);
+
+    const formatTime = (timeInSecs) => {
+      const mins = Math.floor(timeInSecs / 60);
+      const secs = Math.floor(timeInSecs % 60);
+      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
+
+    const sendFallbackMessage = (videoUrl, formattedTime) => {
+      console.warn('[SyncPlay Snapshot] Invoking text watch-link fallback.');
+      const messageData = {
+        chatId: activeChat._id,
+        content: `📺 SyncPlay link at ${formattedTime}\n🔗 Watch here: ${videoUrl}`,
+        replyTo: replyingToMessage ? replyingToMessage._id : null
+      };
+      socketRef.current?.emit('send_message', messageData);
+      setIsSharingFrame(false);
+    };
+
+    if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+      try {
+        const video = videoPlayerRef.current;
+        const currentTime = video.currentTime;
+        const duration = video.duration || 0;
+        const formattedTime = formatTime(currentTime);
+        const formattedDuration = duration ? formatTime(duration) : '';
+        const timestampString = formattedDuration ? `${formattedTime} / ${formattedDuration}` : formattedTime;
+
+        const watchUrl = `${API_BASE_URL.replace('/api', '')}${syncPlayVideoUrl}#t=${Math.floor(currentTime)}`;
+
+        const videoWidth = video.videoWidth || 640;
+        const videoHeight = video.videoHeight || 360;
+        
+        const canvas = document.createElement('canvas');
+        const maxDimension = 1920;
+        let canvasWidth = videoWidth;
+        let canvasHeight = videoHeight;
+        
+        if (videoWidth > videoHeight) {
+          if (videoWidth > maxDimension) {
+            canvasWidth = maxDimension;
+            canvasHeight = Math.round((videoHeight * maxDimension) / videoWidth);
+          }
+        } else {
+          if (videoHeight > maxDimension) {
+            canvasHeight = maxDimension;
+            canvasWidth = Math.round((videoWidth * maxDimension) / videoHeight);
+          }
+        }
+        
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        const ctx = canvas.getContext('2d');
+
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        } catch (e) {
+          console.warn('[SyncPlay Snapshot] Canvas tainted or capture failed:', e);
+          sendFallbackMessage(watchUrl, formattedTime);
+          return;
+        }
+
+        // Draw a clean timestamp badge in the bottom-left corner
+        const scaleFactor = canvasWidth / 640;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+        const badgeX = 15 * scaleFactor;
+        const badgeY = canvas.height - (35 * scaleFactor);
+        const fontSize = Math.max(12, Math.round(12 * scaleFactor));
+        ctx.font = `500 ${fontSize}px system-ui, -apple-system, sans-serif`;
+        const badgeWidth = ctx.measureText(timestampString).width + (20 * scaleFactor);
+        const badgeHeight = 24 * scaleFactor;
+        const radius = 4 * scaleFactor;
+        
+        ctx.beginPath();
+        ctx.moveTo(badgeX + radius, badgeY);
+        ctx.lineTo(badgeX + badgeWidth - radius, badgeY);
+        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY, badgeX + badgeWidth, badgeY + radius);
+        ctx.lineTo(badgeX + badgeWidth, badgeY + badgeHeight - radius);
+        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY + badgeHeight, badgeX + badgeWidth - radius, badgeY + badgeHeight);
+        ctx.lineTo(badgeX + radius, badgeY + badgeHeight);
+        ctx.quadraticCurveTo(badgeX, badgeY + badgeHeight, badgeX, badgeY + badgeHeight - radius);
+        ctx.lineTo(badgeX, badgeY + radius);
+        ctx.quadraticCurveTo(badgeX, badgeY, badgeX + radius, badgeY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(timestampString, badgeX + (10 * scaleFactor), badgeY + (16 * scaleFactor));
+
+        canvas.toBlob(async (blob) => {
+          try {
+            if (!blob) {
+              sendFallbackMessage(watchUrl, formattedTime);
+              return;
+            }
+
+            const file = new File([blob], `syncplay-snapshot-local-${Math.floor(currentTime)}.jpg`, {
+              type: 'image/jpeg'
+            });
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch(`${API_BASE_URL}/upload`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+              body: formData
+            });
+
+            if (response.ok) {
+              const uploadData = await response.json();
+              const messageData = {
+                chatId: activeChat._id,
+                content: `📸 Shared a video snapshot at ${formattedTime}`,
+                fileUrl: uploadData.fileUrl,
+                fileName: `snapshot-${formattedTime}.jpg`,
+                fileType: 'image/jpeg',
+                fileSize: uploadData.fileSize,
+                replyTo: replyingToMessage ? replyingToMessage._id : null
+              };
+
+              socketRef.current?.emit('send_message', messageData);
+              setReplyingToMessage(null);
+            } else {
+              sendFallbackMessage(watchUrl, formattedTime);
+            }
+          } catch (err) {
+            console.error(err);
+            sendFallbackMessage(watchUrl, formattedTime);
+          } finally {
+            setIsSharingFrame(false);
+          }
+        }, 'image/jpeg', 0.85);
+
+      } catch (err) {
+        console.error(err);
+        setIsSharingFrame(false);
+      }
+      return;
+    }
+
+    if (!videoId && ytPlayerRef.current) {
+      try {
+        if (typeof ytPlayerRef.current.getVideoData === 'function') {
+          const videoData = ytPlayerRef.current.getVideoData();
+          if (videoData && videoData.video_id) {
+            videoId = videoData.video_id;
+          }
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    if (!videoId && ytPlayerRef.current) {
+      try {
+        if (typeof ytPlayerRef.current.getVideoUrl === 'function') {
+          const videoUrl = ytPlayerRef.current.getVideoUrl();
+          if (videoUrl) {
+            videoId = extractYouTubeId(videoUrl);
+          }
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    if (!videoId) {
+      setIsSharingFrame(false);
+      return;
+    }
+
+    try {
+      const player = ytPlayerRef.current;
+      let currentTime = 0;
+      let duration = 0;
+
+      try {
+        if (player && typeof player.getCurrentTime === 'function') {
+          currentTime = player.getCurrentTime();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+
+      try {
+        if (player && typeof player.getDuration === 'function') {
+          duration = player.getDuration();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+
+      const formattedTime = formatTime(currentTime);
+      const formattedDuration = duration ? formatTime(duration) : '';
+      const timestampString = formattedDuration ? `${formattedTime} / ${formattedDuration}` : formattedTime;
+
+      const videoUrl = `https://youtu.be/${videoId}?t=${Math.floor(currentTime)}`;
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      const proxyUrl = `${API_BASE_URL}/upload/proxy-thumb?videoId=${videoId}`;
+      img.src = proxyUrl;
+
+      const sendYtFallbackMessage = () => {
+        sendFallbackMessage(videoUrl, formattedTime);
+      };
+
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1920;
+          canvas.height = 1080;
+          const ctx = canvas.getContext('2d');
+
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          // Draw a clean timestamp badge in the bottom-left corner
+          const scaleFactor = canvas.width / 640;
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+          const badgeX = 15 * scaleFactor;
+          const badgeY = canvas.height - (35 * scaleFactor);
+          const fontSize = Math.max(12, Math.round(12 * scaleFactor));
+          ctx.font = `500 ${fontSize}px system-ui, -apple-system, sans-serif`;
+          const badgeWidth = ctx.measureText(timestampString).width + (20 * scaleFactor);
+          const badgeHeight = 24 * scaleFactor;
+          const radius = 4 * scaleFactor;
+          
+          ctx.beginPath();
+          ctx.moveTo(badgeX + radius, badgeY);
+          ctx.lineTo(badgeX + badgeWidth - radius, badgeY);
+          ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY, badgeX + badgeWidth, badgeY + radius);
+          ctx.lineTo(badgeX + badgeWidth, badgeY + badgeHeight - radius);
+          ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY + badgeHeight, badgeX + badgeWidth - radius, badgeY + badgeHeight);
+          ctx.lineTo(badgeX + radius, badgeY + badgeHeight);
+          ctx.quadraticCurveTo(badgeX, badgeY + badgeHeight, badgeX, badgeY + badgeHeight - radius);
+          ctx.lineTo(badgeX, badgeY + radius);
+          ctx.quadraticCurveTo(badgeX, badgeY, badgeX + radius, badgeY);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(timestampString, badgeX + (10 * scaleFactor), badgeY + (16 * scaleFactor));
+
+          canvas.toBlob(async (blob) => {
+            try {
+              if (!blob) {
+                sendYtFallbackMessage();
+                return;
+              }
+
+              const file = new File([blob], `syncplay-snapshot-${videoId}-${Math.floor(currentTime)}.jpg`, {
+                type: 'image/jpeg'
+              });
+
+              const formData = new FormData();
+              formData.append('file', file);
+
+              const response = await fetch(`${API_BASE_URL}/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+              });
+
+              if (response.ok) {
+                const uploadData = await response.json();
+                const messageData = {
+                  chatId: activeChat._id,
+                  content: `📸 Shared a video snapshot at ${formattedTime}`,
+                  fileUrl: uploadData.fileUrl,
+                  fileName: `snapshot-${formattedTime}.jpg`,
+                  fileType: 'image/jpeg',
+                  fileSize: uploadData.fileSize,
+                  replyTo: replyingToMessage ? replyingToMessage._id : null
+                };
+
+                socketRef.current?.emit('send_message', messageData);
+                setReplyingToMessage(null);
+              } else {
+                sendYtFallbackMessage();
+              }
+            } catch (err) {
+              console.error(err);
+              sendYtFallbackMessage();
+            } finally {
+              setIsSharingFrame(false);
+            }
+          }, 'image/jpeg', 0.85);
+
+        } catch (err) {
+          console.error(err);
+          sendYtFallbackMessage();
+          setIsSharingFrame(false);
+        }
+      };
+
+      img.onerror = () => {
+        sendYtFallbackMessage();
+      };
+
+    } catch (err) {
+      console.error(err);
+      alert(`Error taking snapshot: ${err.message}`);
+      setIsSharingFrame(false);
+    }
+  };
+
+  function handleSkipTime(amount) {
+    if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+      const currentTime = videoPlayerRef.current.currentTime + amount;
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime,
+        isPlaying: syncPlayIsPlaying
+      });
+
+      ignorePlayerStateChangeRef.current = true;
+      videoPlayerRef.current.currentTime = currentTime;
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+      return;
+    }
+
     if (ytPlayerRef.current && ytPlayerReadyRef.current) {
       const currentTime = ytPlayerRef.current.getCurrentTime() + amount;
       socketRef.current?.emit('sync_play_update', {
@@ -2782,7 +4482,7 @@ function App() {
       if (response.ok) {
         const chatData = await response.json();
         if (chatData.syncPlay && chatData.syncPlay.active) {
-          const { currentTime, isPlaying, lastUpdatedAt, videoId } = chatData.syncPlay;
+          const { currentTime, isPlaying, lastUpdatedAt, videoId, videoUrl, downloadStatus, downloadProgress, downloadError, history } = chatData.syncPlay;
           
           let targetTime = currentTime || 0;
           if (isPlaying && lastUpdatedAt) {
@@ -2790,7 +4490,47 @@ function App() {
             targetTime += elapsed;
           }
 
-          if (ytPlayerRef.current && ytPlayerReadyRef.current) {
+          setSyncPlayVideoId(videoId);
+          setSyncPlayVideoUrl(videoUrl || '');
+          setSyncPlayDownloadStatus(downloadStatus || 'idle');
+          setSyncPlayDownloadProgress(downloadProgress || 0);
+          setSyncPlayDownloadError(downloadError || '');
+          setSyncPlayHistory(history || []);
+
+          setActiveChat(prev => {
+            if (prev && prev._id === activeChat._id) {
+              return {
+                ...prev,
+                syncPlay: chatData.syncPlay
+              };
+            }
+            return prev;
+          });
+
+          setChats(prev => prev.map(c => {
+            if (c._id === activeChat._id) {
+              return {
+                ...c,
+                syncPlay: chatData.syncPlay
+              };
+            }
+            return c;
+          }));
+
+          if (downloadStatus === 'completed' && videoPlayerRef.current) {
+            ignorePlayerStateChangeRef.current = true;
+            videoPlayerRef.current.currentTime = targetTime;
+            if (isPlaying) {
+              videoPlayerRef.current.play().catch(e => console.error(e));
+              setSyncPlayIsPlaying(true);
+            } else {
+              videoPlayerRef.current.pause();
+              setSyncPlayIsPlaying(false);
+            }
+            setTimeout(() => {
+              ignorePlayerStateChangeRef.current = false;
+            }, 800);
+          } else if (ytPlayerRef.current && ytPlayerReadyRef.current) {
             ignorePlayerStateChangeRef.current = true;
             
             if (videoId && videoId !== syncPlayVideoId) {
@@ -2870,7 +4610,7 @@ function App() {
     }
   };
 
-  const logout = () => {
+  function logout() {
     localStorage.removeItem('alaap_token');
     setToken('');
     setUser(null);
@@ -2908,6 +4648,15 @@ function App() {
     };
   };
 
+  if (token && loadingUser) {
+    return (
+      <div className="app-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0b0c10', color: '#f8fafc' }}>
+        <Loader2 className="animate-spin" size={42} style={{ color: '#6366f1', marginBottom: '16px' }} />
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Loading Alaap...</h3>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {!token ? (
@@ -2919,25 +4668,25 @@ function App() {
           showAlert={showAlert}
         />
       ) : (
-        <div className={`main-workspace glass-panel ${activeChat ? 'active-chat-selected' : ''} ${isAdminOpen ? 'admin-selected' : ''}`}>
+        <div className={`main-workspace glass-panel ${activeChat ? 'active-chat-selected' : ''} ${isAdminOpen ? 'admin-selected' : ''} ${isSettingsOpen ? 'settings-selected' : ''}`}>
           {/* Sidebar */}
           <div className={`sidebar border-r ${isSidebarHidden ? 'hidden' : ''}`} style={{ width: `${sidebarWidth}px` }}>
             {/* Sidebar Header */}
             <div className="sidebar-header border-b">
-              <div className="user-profile hoverable-profile" onClick={openProfileModal} title="Edit Profile Settings">
+              <div className="user-profile">
                 <div className="avatar">
                   {user?.profilePic ? (
-                    <img src={user.profilePic} alt={user.username} />
+                    <img src={user.profilePic} alt={user?.username || 'User'} />
                   ) : (
-                    user?.username?.substring(0, 2).toUpperCase()
+                    user?.username?.substring(0, 2).toUpperCase() || 'AL'
                   )}
                   <div className="status-dot online"></div>
                 </div>
                 <div className="user-info">
-                  <h3 className="username">{user?.username}</h3>
+                  <h3 className="username">{user?.username || 'Loading...'}</h3>
                   {user?.isAdmin && (
-                    <span className={`admin-badge ${user.role === 'Admin' ? 'subadmin' : ''}`}>
-                      <Shield size={10} /> {user.role || 'Root'}
+                    <span className={`admin-badge ${user?.role === 'Admin' ? 'subadmin' : ''}`}>
+                      <Shield size={10} /> {user?.role || 'Root'}
                     </span>
                   )}
                 </div>
@@ -2947,16 +4696,143 @@ function App() {
                   <button 
                     className={`icon-btn ${isAdminOpen ? 'active' : ''}`} 
                     title="Root Dashboard"
-                    onClick={() => setIsAdminOpen(!isAdminOpen)}
+                    onClick={() => {
+                      setIsAdminOpen(!isAdminOpen);
+                      setIsSettingsOpen(false);
+                    }}
                   >
-                    <Settings size={20} />
+                    <Shield size={20} />
                   </button>
                 )}
-                <button className="icon-btn logout-btn" title="Logout" onClick={logout}>
-                  <LogOut size={20} />
+                
+                {/* Notification Bell */}
+                <button 
+                  className={`icon-btn ${showNotificationCenter ? 'active' : ''}`} 
+                  title="Notifications"
+                  onClick={() => {
+                    setShowNotificationCenter(!showNotificationCenter);
+                    setIsSettingsOpen(false);
+                    setIsAdminOpen(false);
+                  }}
+                  style={{ position: 'relative' }}
+                >
+                  <Bell size={20} />
+                  {notifications.some(n => !n.read) && (
+                    <span className="bell-badge-dot" style={{
+                      position: 'absolute',
+                      top: '4px',
+                      right: '4px',
+                      width: '8px',
+                      height: '8px',
+                      backgroundColor: 'var(--accent-rose, #f43f5e)',
+                      borderRadius: '50%',
+                      border: '1.5px solid rgba(15, 17, 26, 0.95)'
+                    }}></span>
+                  )}
+                </button>
+
+                <button 
+                  className={`icon-btn ${isSettingsOpen ? 'active' : ''}`} 
+                  title="Settings"
+                  onClick={() => {
+                    setIsSettingsOpen(!isSettingsOpen);
+                    setIsAdminOpen(false);
+                    setShowNotificationCenter(false);
+                  }}
+                >
+                  <Settings size={20} />
                 </button>
               </div>
             </div>
+
+            {/* Notification Center Inline Panel */}
+            {showNotificationCenter && (
+              <div className="inline-notification-center" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                flexGrow: 1,
+                overflow: 'hidden'
+              }}>
+                <div className="notification-center-header border-b" style={{
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'rgba(0, 0, 0, 0.1)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      className="icon-btn" 
+                      onClick={() => setShowNotificationCenter(false)}
+                      title="Back to Chats"
+                      style={{ padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</h4>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="text-btn btn-sm" onClick={markAllNotificationsAsRead} style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer' }}>Mark read</button>
+                    <button className="text-btn btn-sm text-danger" onClick={clearNotificationHistory} style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer' }}>Clear all</button>
+                  </div>
+                </div>
+                <div className="notification-center-list scroll-container" style={{
+                  overflowY: 'auto',
+                  flexGrow: 1,
+                  padding: '12px'
+                }}>
+                  {notifications.length === 0 ? (
+                    <div className="empty-notifications" style={{
+                      padding: '40px 20px',
+                      textAlign: 'center',
+                      color: 'var(--text-muted)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <BellOff size={28} style={{ color: 'var(--text-muted)' }} />
+                      <span style={{ fontSize: '0.85rem' }}>No notification history</span>
+                    </div>
+                  ) : (
+                    notifications.map(n => (
+                      <div 
+                        key={n.id} 
+                        className={`notification-item ${n.read ? 'read' : 'unread'}`}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 'var(--radius-sm)',
+                          cursor: 'pointer',
+                          marginBottom: '8px',
+                          background: n.read ? 'rgba(255,255,255,0.02)' : 'rgba(99, 102, 241, 0.08)',
+                          border: n.read ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(99, 102, 241, 0.15)',
+                          transition: 'all 0.2s'
+                        }}
+                        onClick={() => {
+                          setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
+                          const targetChat = chats.find(c => c._id === n.chatId);
+                          if (targetChat) setActiveChat(targetChat);
+                          setShowNotificationCenter(false);
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span className="notification-title" style={{ fontSize: '0.85rem', fontWeight: n.read ? 500 : 700, color: 'var(--text-primary)' }}>{n.title}</span>
+                          <span className="notification-time" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="notification-msg" style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.message}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!showNotificationCenter && (
+              <>
 
             {/* User Search & Actions */}
             <div className="sidebar-search border-b">
@@ -3052,7 +4928,10 @@ function App() {
                       </div>
                       <div className="chat-item-info">
                         <div className="chat-item-header">
-                          <span className="chat-name">{details.name}</span>
+                          <span className="chat-name" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>{details.name}</span>
+                            {isChatMuted(chat) && <BellOff size={12} style={{ opacity: 0.5, color: 'var(--text-secondary)' }} />}
+                          </span>
                           {chat.latestMessage && (
                             <span className="chat-time">
                               {new Date(chat.latestMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -3075,14 +4954,20 @@ function App() {
                         </div>
                       </div>
                       {chat.unreadCount > 0 && (
-                        <div className="unread-badge">{chat.unreadCount}</div>
+                        <div className={`unread-badge ${isChatMuted(chat) ? 'muted' : ''}`} style={isChatMuted(chat) ? {
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          color: 'var(--text-secondary)',
+                          boxShadow: 'none'
+                        } : {}}>{chat.unreadCount}</div>
                       )}
                     </div>
                   );
                 })
               )}
             </div>
-          </div>
+          </>
+        )}
+      </div>
           
           {!isSidebarHidden && (
             <div 
@@ -3091,7 +4976,7 @@ function App() {
             />
           )}
 
-          {/* Active Chat Area or Admin Dashboard */}
+          {/* Active Chat Area or Admin Dashboard or Settings Center */}
           {isAdminOpen ? (
             <AdminDashboard 
               token={token} 
@@ -3113,6 +4998,19 @@ function App() {
                 setIsAdminOpen(false);
               }}
               socket={socketRef.current}
+            />
+          ) : isSettingsOpen ? (
+            <SettingsCenter 
+              token={token}
+              user={user}
+              setUser={setUser}
+              onClose={() => setIsSettingsOpen(false)}
+              logout={logout}
+              deferredPrompt={deferredPrompt}
+              setDeferredPrompt={setDeferredPrompt}
+              notificationSettings={notificationSettings}
+              setNotificationSettings={setNotificationSettings}
+              requestNotificationPermission={requestNotificationPermission}
             />
           ) : activeChat ? (
             <div 
@@ -3205,11 +5103,11 @@ function App() {
                         title={syncPlayActive ? 'Close Sync Play View' : 'Start/Join Sync Play'}
                         onClick={() => {
                           if (syncPlayActive) {
-                            setSyncPlayActive(false);
+                            changeSyncPlayActive(false);
                           } else {
                             setIsInfoPanelOpen(false); // Close chat details panel when opening Sync Play
                             if (activeChat.syncPlay && activeChat.syncPlay.active) {
-                              setSyncPlayActive(true);
+                              changeSyncPlayActive(true);
                               setSyncPlayVideoId(activeChat.syncPlay.videoId);
                               setSyncPlayIsPlaying(activeChat.syncPlay.isPlaying);
                             } else {
@@ -3231,7 +5129,7 @@ function App() {
                       const nextState = !isInfoPanelOpen;
                       setIsInfoPanelOpen(nextState);
                       if (nextState) {
-                        setSyncPlayActive(false); // Close Sync Play panel when opening chat details
+                        changeSyncPlayActive(false); // Close Sync Play panel when opening chat details
                       }
                     }}
                   >
@@ -3295,7 +5193,10 @@ function App() {
                             ) : (
                               <div className="file-attachment">
                                 {msg.fileType.startsWith('image/') ? (
-                                  <div className="attachment-image-wrapper" onClick={() => setPreviewImageUrl(msg.fileUrl)}>
+                                  <div className="attachment-image-wrapper" onClick={() => {
+                                    setPreviewImageUrl(msg.fileUrl);
+                                    setPreviewImageMsg(msg);
+                                  }}>
                                     <img 
                                       src={msg.fileUrl} 
                                       alt={msg.fileName} 
@@ -3344,7 +5245,7 @@ function App() {
                           )}
 
                           {/* Render text content */}
-                          {msg.content && !msg.fileUrl && (
+                          {msg.content && (
                             <p className="message-text">
                               {renderMessageContent(msg)}
                             </p>
@@ -3791,11 +5692,14 @@ function App() {
                     </button>
                     <button 
                       type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setSyncPlayActive(false)}
+                      className={`btn btn-sm ${showSyncPlayHistoryTab ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setShowSyncPlayHistoryTab(prev => !prev)}
+                      title="View Video History"
+                      style={{ width: '32px', height: '32px', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
-                      Hide View
+                      <History size={15} />
                     </button>
+
                     <button 
                       type="button"
                       className="btn btn-danger btn-sm"
@@ -3806,9 +5710,782 @@ function App() {
                   </div>
                 </div>
 
-                <div className="sync-play-content">
-                  <div className="yt-player-container">
-                    <div id="sync-play-yt-player"></div>
+              <div className="sync-play-content">
+                {showSyncPlayHistoryTab ? (
+                  <div className="sync-play-history-panel" style={{ display: 'flex', flexDirection: 'column', gap: '15px', height: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ margin: 0, fontSize: '15px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <History size={16} style={{ color: 'var(--primary)' }} />
+                        <span>Playback History</span>
+                      </h4>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setShowSyncPlayHistoryTab(false)}
+                      >
+                        Back to Player
+                      </button>
+                    </div>
+
+                    <div className="history-list" style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      overflowY: 'auto',
+                      maxHeight: 'calc(100vh - 250px)',
+                      paddingRight: '4px'
+                    }}>
+                      {syncPlayHistory && syncPlayHistory.length > 0 ? (
+                        [...syncPlayHistory].reverse().map((item, idx) => {
+                          const dateString = new Date(item.addedAt).toLocaleString();
+                          const isCurrentlyPlaying = syncPlayVideoId === item.videoId;
+                          
+                          return (
+                            <div 
+                              key={item._id || idx}
+                              className="history-item"
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                                padding: '12px',
+                                background: isCurrentlyPlaying ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                                border: isCurrentlyPlaying ? '1px solid #3b82f6' : '1px solid var(--glass-border)',
+                                borderRadius: 'var(--radius-md)',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                  <div 
+                                    style={{
+                                      fontSize: '13px',
+                                      fontWeight: '600',
+                                      color: '#fff',
+                                      maxHeight: '40px',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      flexGrow: 1
+                                    }}
+                                    title={item.videoTitle || item.videoId}
+                                  >
+                                    {item.videoTitle || 'Video'}
+                                  </div>
+                                  {isCurrentlyPlaying && (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', background: '#3b82f6', color: '#fff', borderRadius: '10px', fontWeight: 'bold', flexShrink: 0 }}>
+                                      Playing
+                                    </span>
+                                  )}
+                                </div>
+                                <div 
+                                  style={{
+                                    fontSize: '11px',
+                                    color: 'rgba(255, 255, 255, 0.4)',
+                                    wordBreak: 'break-all',
+                                    maxHeight: '20px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  title={item.videoId}
+                                >
+                                  {item.videoId}
+                                </div>
+                              </div>
+                              
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                                <span>Loaded by: <strong style={{ color: 'var(--primary)' }}>{item.addedByName || 'User'}</strong></span>
+                                <span title={dateString}>{new Date(item.addedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                              
+                              {!isCurrentlyPlaying && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ marginTop: '5px', width: 'fit-content', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)' }}
+                                  onClick={() => {
+                                    handleChangeVideo(item.videoId);
+                                    setShowSyncPlayHistoryTab(false);
+                                  }}
+                                >
+                                  Replay Video
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '40px 20px',
+                          color: 'rgba(255, 255, 255, 0.4)',
+                          textAlign: 'center',
+                          gap: '10px'
+                        }}>
+                          <History size={32} style={{ opacity: 0.3 }} />
+                          <span style={{ fontSize: '13px' }}>No played videos in this session yet.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="yt-player-container" style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div id="sync-play-yt-player" style={{ display: (syncPlayDownloadStatus !== 'completed' && !syncPlayVideoUrl) ? 'block' : 'none', width: '100%', height: '100%' }}></div>
+                    
+                    {syncPlayDownloadStatus === 'completed' && syncPlayVideoUrl && (
+                      <div 
+                        className="custom-video-player-container"
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}
+                        onMouseMove={handleMouseMoveControls}
+                        onMouseLeave={() => setShowCustomControls(false)}
+                      >
+                        {/* Fullscreen Toasts Container */}
+                        {isFullscreenActive && toasts.length > 0 && (
+                          <div className="fullscreen-toast-container" style={{
+                            position: 'absolute',
+                            top: '24px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            width: '100%',
+                            maxWidth: '360px',
+                            pointerEvents: 'none'
+                          }}>
+                            {toasts.map(toast => (
+                              <div 
+                                key={toast.id} 
+                                className="toast-notification glass-panel animate-slide-in" 
+                                style={{
+                                  pointerEvents: 'auto',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '12px',
+                                  padding: '10px 16px',
+                                  background: 'rgba(15, 17, 26, 0.95)',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  borderRadius: 'var(--radius-md)',
+                                  boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
+                                  cursor: 'pointer',
+                                  backdropFilter: 'blur(10px)',
+                                  WebkitBackdropFilter: 'blur(10px)'
+                                }}
+                                onClick={() => {
+                                  if (document.exitFullscreen) {
+                                    document.exitFullscreen().catch(err => console.error(err));
+                                  }
+                                  toast.onClick?.();
+                                  removeToast(toast.id);
+                                }}
+                              >
+                                {toast.avatar ? (
+                                  <img 
+                                    src={toast.avatar} 
+                                    alt={toast.title} 
+                                    style={{
+                                      width: '32px',
+                                      height: '32px',
+                                      borderRadius: '50%',
+                                      objectFit: 'cover'
+                                    }} 
+                                  />
+                                ) : (
+                                  <div 
+                                    style={{
+                                      width: '32px',
+                                      height: '32px',
+                                      borderRadius: '50%',
+                                      background: 'var(--primary)',
+                                      color: '#fff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontWeight: '600',
+                                      fontSize: '0.8rem'
+                                    }}
+                                  >
+                                    {toast.title.substring(0, 2).toUpperCase()}
+                                  </div>
+                                )}
+                                <div style={{ flexGrow: 1, overflow: 'hidden', textAlign: 'left' }}>
+                                  <div style={{ fontWeight: '600', fontSize: '0.8rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {toast.title}
+                                  </div>
+                                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '1px' }}>
+                                    {toast.message}
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeToast(toast.id);
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'rgba(255, 255, 255, 0.4)',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: '50%',
+                                  }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <video
+                          ref={videoPlayerRef}
+                          src={`${API_BASE_URL.replace('/api', '')}${syncPlayVideoUrl}`}
+                          crossOrigin="anonymous"
+                          style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
+                          onPlay={handleVideoPlay}
+                          onPause={handleVideoPause}
+                          onSeeked={handleVideoSeeked}
+                          onLoadedMetadata={(e) => {
+                            setVideoDuration(e.target.duration);
+                            handleVideoLoadedMetadata(e);
+                          }}
+                          onTimeUpdate={(e) => {
+                            if (!isDraggingTimelineRef.current) {
+                              setVideoCurrentTime(e.target.currentTime);
+                            }
+                          }}
+                          onClick={handleCustomPlayerPlayPauseToggle}
+                          onDoubleClick={handleVideoDoubleClick}
+                        />
+
+
+                        {/* Controls bar at the bottom */}
+                        <div 
+                          className="custom-player-controls-bar"
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.4), transparent)',
+                            padding: '15px 20px 10px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            opacity: showCustomControls ? 1 : 0,
+                            transition: 'opacity 0.3s ease',
+                            pointerEvents: showCustomControls ? 'auto' : 'none',
+                            zIndex: 9
+                          }}
+                        >
+                          {/* Timeline Slider (blue color timeline with drag support) */}
+                          <div 
+                            ref={timelineContainerRef}
+                            className="custom-timeline-container"
+                            style={{
+                              position: 'relative',
+                              width: '100%',
+                              height: (isHoveringTimeline || isDraggingTimeline) ? '8px' : '5px',
+                              background: 'rgba(255,255,255,0.2)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              transition: 'height 0.2s ease'
+                            }}
+                            onMouseDown={handleCustomTimelineMouseDown}
+                            onTouchStart={handleCustomTimelineTouchStart}
+                            onMouseEnter={() => setIsHoveringTimeline(true)}
+                            onMouseLeave={() => setIsHoveringTimeline(false)}
+                          >
+                            <div 
+                              className="custom-timeline-progress"
+                              style={{
+                                width: `${videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0}%`,
+                                height: '100%',
+                                background: '#3b82f6', // blue color timeline
+                                borderRadius: '4px',
+                                position: 'relative'
+                              }}
+                            >
+                              <div 
+                                className="custom-timeline-handle"
+                                style={{
+                                  position: 'absolute',
+                                  right: '-6px',
+                                  top: '50%',
+                                  transform: 'translateY(-50%)' + ((isHoveringTimeline || isDraggingTimeline) ? ' scale(1.2)' : ' scale(1)'),
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  background: '#fff',
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.6)',
+                                  border: '2px solid #3b82f6',
+                                  transition: 'transform 0.15s ease, opacity 0.15s ease',
+                                  opacity: (isHoveringTimeline || isDraggingTimeline) ? 1 : 0.8
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Control buttons & Sound/Fullscreen */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', color: '#fff' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              {/* Small Play/Pause */}
+                              <button 
+                                type="button" 
+                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                onClick={handleCustomPlayerPlayPauseToggle}
+                              >
+                                {syncPlayIsPlaying ? <Pause size={18} fill="#fff" /> : <Play size={18} fill="#fff" style={{ marginLeft: '2px' }} />}
+                              </button>
+
+                              {/* Time Indicator */}
+                              <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                {formatTimeMMSS(videoCurrentTime)} / {formatTimeMMSS(videoDuration)}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              {/* Volume Controls (white color sound, expands on hover like YouTube) */}
+                              <div 
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                                onMouseEnter={() => setIsHoveringCustomVolume(true)}
+                                onMouseLeave={() => setIsHoveringCustomVolume(false)}
+                              >
+                                <button 
+                                  type="button" 
+                                  style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                  onClick={handleVolumeMuteToggle}
+                                >
+                                  {videoMuted || videoVolume === 0 ? (
+                                    <VolumeX size={18} style={{ color: '#ffffff' }} />
+                                  ) : videoVolume < 0.5 ? (
+                                    <Volume1 size={18} style={{ color: '#ffffff' }} />
+                                  ) : (
+                                    <Volume2 size={18} style={{ color: '#ffffff' }} />
+                                  )}
+                                </button>
+                                <div 
+                                  style={{
+                                    width: isHoveringCustomVolume ? '70px' : '0px',
+                                    opacity: isHoveringCustomVolume ? 1 : 0,
+                                    overflow: 'hidden',
+                                    transition: 'width 0.2s ease, opacity 0.2s ease',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.05"
+                                    value={videoMuted ? 0 : videoVolume}
+                                    onChange={handleVolumeChange}
+                                    style={{
+                                      width: '60px',
+                                      accentColor: '#ffffff', // white color volume slider
+                                      height: '4px',
+                                      borderRadius: '2px',
+                                      cursor: 'pointer'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Playback Speed Select */}
+                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                <select
+                                  value={videoPlaybackRate}
+                                  onChange={(e) => handleVideoPlaybackRateChange(parseFloat(e.target.value))}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                                    color: '#fff',
+                                    borderRadius: '4px',
+                                    padding: '2px 4px',
+                                    fontSize: '0.75rem',
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    height: '24px'
+                                  }}
+                                  title="Playback Speed"
+                                >
+                                  <option value="0.5" style={{ background: '#131520', color: '#fff' }}>0.5x</option>
+                                  <option value="0.75" style={{ background: '#131520', color: '#fff' }}>0.75x</option>
+                                  <option value="1" style={{ background: '#131520', color: '#fff' }}>1.0x (Normal)</option>
+                                  <option value="1.25" style={{ background: '#131520', color: '#fff' }}>1.25x</option>
+                                  <option value="1.5" style={{ background: '#131520', color: '#fff' }}>1.5x</option>
+                                  <option value="1.75" style={{ background: '#131520', color: '#fff' }}>1.75x</option>
+                                  <option value="2" style={{ background: '#131520', color: '#fff' }}>2.0x</option>
+                                </select>
+                              </div>
+
+                              {/* Toggle Floating Chat Button */}
+                              <button 
+                                type="button" 
+                                style={{ 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  color: showFloatingChat ? 'var(--primary)' : '#fff', 
+                                  cursor: 'pointer', 
+                                  padding: 0, 
+                                  display: 'flex', 
+                                  alignItems: 'center',
+                                  transition: 'color 0.2s ease'
+                                }}
+                                onClick={() => setShowFloatingChat(prev => !prev)}
+                                title="Toggle Floating Chat"
+                              >
+                                <MessageSquare size={18} />
+                              </button>
+
+                              {/* Share Frame Button */}
+                              <button 
+                                type="button" 
+                                style={{ 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  color: '#fff', 
+                                  cursor: (uploading || isSharingFrame) ? 'not-allowed' : 'pointer', 
+                                  padding: 0, 
+                                  display: 'flex', 
+                                  alignItems: 'center',
+                                  opacity: (uploading || isSharingFrame) ? 0.6 : 1
+                                }}
+                                onClick={handleSyncPlayScreenshot}
+                                title="Share Frame"
+                                disabled={uploading || isSharingFrame}
+                              >
+                                {isSharingFrame ? (
+                                  <Loader2 className="animate-spin" size={18} />
+                                ) : (
+                                  <ScreenShare size={18} />
+                                )}
+                              </button>
+
+                              {/* Fullscreen Button */}
+                              <button 
+                                type="button" 
+                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                onClick={handleFullscreenToggle}
+                              >
+                                <Maximize size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {showFloatingChat && (
+                          <div 
+                            ref={floatingChatContainerRef}
+                            className="floating-chat-container glass-panel"
+                            style={{
+                              position: 'absolute',
+                              left: floatingChatPos.left !== null ? `${floatingChatPos.left}px` : 'auto',
+                              right: floatingChatPos.left !== null ? 'auto' : '20px',
+                              top: floatingChatPos.top !== null ? `${floatingChatPos.top}px` : '20px',
+                              bottom: floatingChatPos.top !== null ? 'auto' : '80px',
+                              width: `${floatingChatSize.width}px`,
+                              height: floatingChatSize.height !== null ? `${floatingChatSize.height}px` : 'auto',
+                              maxHeight: 'calc(100% - 100px)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              background: 'rgba(11, 12, 16, 0.85)',
+                              backdropFilter: 'blur(12px)',
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              borderRadius: '12px',
+                              zIndex: 10,
+                              color: '#fff',
+                              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                              overflow: 'hidden'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseEnter={() => setIsHoveringFloatingChat(true)}
+                            onMouseLeave={() => setIsHoveringFloatingChat(false)}
+                          >
+                            {/* Floating Chat Header (Drag Handle) */}
+                            <div 
+                              onPointerDown={handlePointerDown}
+                              onPointerMove={handlePointerMove}
+                              onPointerUp={handlePointerUp}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '12px 16px',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                cursor: isDraggingFloatingChat ? 'grabbing' : 'grab',
+                                userSelect: 'none',
+                                touchAction: 'none'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <MessageSquare size={16} style={{ color: 'var(--primary)' }} />
+                                <span style={{ 
+                                  fontWeight: '600', 
+                                  fontSize: '13px', 
+                                  overflow: 'hidden', 
+                                  textOverflow: 'ellipsis', 
+                                  whiteSpace: 'nowrap', 
+                                  maxWidth: '180px' 
+                                }}>
+                                  {getChatDetails(activeChat)?.name || 'Chat'}
+                                </span>
+                              </div>
+                              <button 
+                                type="button" 
+                                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                onClick={() => setShowFloatingChat(false)}
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+
+                            {/* Floating Chat Messages Feed */}
+                            <div 
+                              ref={floatingChatFeedRef}
+                              style={{
+                                flexGrow: 1,
+                                overflowY: 'auto',
+                                padding: '12px 16px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px'
+                              }}
+                            >
+                              {messages.map((msg, index) => {
+                                const isOwn = msg.sender && msg.sender._id === user?.id;
+                                return (
+                                  <div key={msg._id || index} style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: isOwn ? 'flex-end' : 'flex-start',
+                                    maxWidth: '90%',
+                                    alignSelf: isOwn ? 'flex-end' : 'flex-start'
+                                  }}>
+                                    {!isOwn && (
+                                      <span style={{ fontSize: '10px', color: 'var(--primary)', marginBottom: '2px', fontWeight: '500' }}>
+                                        {msg.sender?.username || 'User'}
+                                      </span>
+                                    )}
+                                    <div style={{
+                                      background: isOwn ? '#3b82f6' : 'rgba(255, 255, 255, 0.08)',
+                                      padding: '8px 12px',
+                                      borderRadius: '8px',
+                                      borderTopRightRadius: isOwn ? '2px' : '8px',
+                                      borderTopLeftRadius: !isOwn ? '2px' : '8px',
+                                      fontSize: '12px',
+                                      lineHeight: '1.4',
+                                      wordBreak: 'break-word',
+                                      color: '#fff'
+                                    }}>
+                                      {msg.content || (msg.fileUrl ? '📎 Media shared' : '')}
+                                    </div>
+                                    <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Floating Chat Input form */}
+                            <form 
+                              onSubmit={handleSendFloatingChatMessage}
+                              style={{
+                                padding: '10px 16px',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                display: 'flex',
+                                gap: '8px',
+                                background: 'rgba(0, 0, 0, 0.2)'
+                              }}
+                            >
+                              <input 
+                                type="text"
+                                placeholder="Send message..."
+                                value={floatingChatInput}
+                                onChange={(e) => setFloatingChatInput(e.target.value)}
+                                style={{
+                                  flexGrow: 1,
+                                  background: 'rgba(255, 255, 255, 0.05)',
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                  borderRadius: '6px',
+                                  padding: '6px 10px',
+                                  color: '#fff',
+                                  fontSize: '12px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <button 
+                                type="submit"
+                                style={{
+                                  background: 'var(--primary)',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  width: '28px',
+                                  height: '28px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  opacity: floatingChatInput.trim() ? 1 : 0.6
+                                }}
+                                disabled={!floatingChatInput.trim()}
+                              >
+                                <Send size={14} />
+                              </button>
+                            </form>
+
+                            {/* Resize Handle (Bottom-Left) */}
+                            <div 
+                              onPointerDown={(e) => handleResizePointerDown(e, 'bottom-left')}
+                              onPointerMove={handleResizePointerMove}
+                              onPointerUp={handleResizePointerUp}
+                              style={{
+                                position: 'absolute',
+                                left: '4px',
+                                bottom: '4px',
+                                width: '12px',
+                                height: '12px',
+                                cursor: 'nesw-resize',
+                                zIndex: 11,
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                                justifyContent: 'flex-start',
+                                opacity: 0.5
+                              }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 8 8" style={{ pointerEvents: 'none' }}>
+                                <line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+                                <line x1="3" y1="8" x2="8" y2="3" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+                              </svg>
+                            </div>
+
+                            {/* Resize Handle (Bottom-Right) */}
+                            <div 
+                              onPointerDown={(e) => handleResizePointerDown(e, 'bottom-right')}
+                              onPointerMove={handleResizePointerMove}
+                              onPointerUp={handleResizePointerUp}
+                              style={{
+                                position: 'absolute',
+                                right: '4px',
+                                bottom: '4px',
+                                width: '12px',
+                                height: '12px',
+                                cursor: 'nwse-resize',
+                                zIndex: 11,
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                                justifyContent: 'flex-end',
+                                opacity: 0.5
+                              }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 8 8" style={{ pointerEvents: 'none' }}>
+                                <line x1="8" y1="8" x2="0" y2="0" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+                                <line x1="8" y1="5" x2="5" y2="8" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+                              </svg>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!syncPlayVideoId && syncPlayDownloadStatus === 'idle' && (
+                      <div className="download-status-overlay" style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(11, 12, 16, 0.95)',
+                        color: '#fff',
+                        padding: '20px',
+                        textAlign: 'center',
+                        zIndex: 10
+                      }}>
+                        <Tv size={48} style={{ color: 'var(--primary)', marginBottom: '15px', opacity: 0.8 }} />
+                        <h4 style={{ margin: '0 0 8px 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>No Video Loaded</h4>
+                        <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', margin: '0 0 16px 0', maxWidth: '85%' }}>
+                          Paste a YouTube or video URL below to start playing in sync with your group!
+                        </p>
+                      </div>
+                    )}
+
+                    {syncPlayDownloadStatus === 'downloading' && (
+                      <div className="download-status-overlay" style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(0,0,0,0.85)',
+                        color: '#fff',
+                        padding: '20px',
+                        textAlign: 'center',
+                        zIndex: 10
+                      }}>
+                        <h4 style={{ margin: '0 0 8px 0', color: 'var(--primary)' }}>Downloading Video to Server...</h4>
+                        <div style={{ width: '80%', maxWidth: '300px', height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                          <div style={{ width: `${syncPlayDownloadProgress}%`, height: '100%', background: 'var(--primary)', transition: 'width 0.3s ease' }}></div>
+                        </div>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{Math.round(syncPlayDownloadProgress)}% completed</span>
+                        <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', margin: '8px 0 0 0' }}>The video will automatically start playing once the download completes.</p>
+                      </div>
+                    )}
+
+                    {syncPlayDownloadStatus === 'failed' && (
+                      <div className="download-status-overlay" style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(0,0,0,0.85)',
+                        color: '#fff',
+                        padding: '20px',
+                        textAlign: 'center',
+                        zIndex: 10
+                      }}>
+                        <h4 style={{ margin: '0 0 8px 0', color: '#ff4d4f' }}>Download Failed</h4>
+                        <p style={{ fontSize: '13px', maxWidth: '300px', color: 'rgba(255,255,255,0.8)', margin: '0 0 16px 0' }}>
+                          {syncPlayDownloadError || 'An unknown error occurred during download.'}
+                        </p>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleChangeVideo(syncPlayVideoId)}
+                        >
+                          Retry Download 🔄
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="sync-play-controls border-t">
@@ -3840,6 +6517,28 @@ function App() {
                         {syncPlayIsPlaying ? <Pause size={14} /> : <Play size={14} />}
                         <span>{syncPlayIsPlaying ? 'Pause' : 'Play'}</span>
                       </button>
+
+                      <button 
+                        type="button"
+                        className="btn btn-primary btn-sm flex items-center justify-center"
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          background: 'linear-gradient(135deg, var(--secondary), var(--secondary-hover))', 
+                          borderColor: 'var(--secondary)',
+                          boxShadow: '0 4px 12px rgba(6, 182, 212, 0.2)'
+                        }}
+                        onClick={handleSyncPlayScreenshot}
+                        title="Share Frame"
+                        disabled={uploading || isSharingFrame}
+                      >
+                        {isSharingFrame ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          <ScreenShare size={14} />
+                        )}
+                      </button>
                       
                       <button 
                         type="button"
@@ -3859,15 +6558,17 @@ function App() {
 
                       <button 
                         type="button"
-                        className="btn btn-secondary btn-sm flex items-center gap-1"
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                        className="btn btn-secondary btn-sm flex items-center"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         onClick={handleForceSync}
-                        title="Resync if timeline drifted"
+                        title="Force Sync Timeline"
                       >
-                        Force Sync 🔄
+                        <RefreshCw size={14} />
                       </button>
                     </div>
                   </div>
+                  </>
+                )}
                 </div>
               </div>
             </>
@@ -4069,6 +6770,21 @@ function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Chat Settings (Mute/Unmute Notifications) */}
+                  <div className="info-section" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '16px', marginTop: '12px' }}>
+                    <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--secondary)', letterSpacing: '0.05em', marginBottom: '12px', fontWeight: '700' }}>Chat Settings</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button 
+                        className="btn btn-secondary btn-sm" 
+                        onClick={() => handleToggleMuteChat(activeChat._id)}
+                        style={{ justifyContent: 'flex-start', gap: '8px', fontSize: '0.85rem', color: 'var(--text-primary)' }}
+                      >
+                        {isChatMuted(activeChat) ? <Bell size={16} style={{ color: 'var(--primary)' }} /> : <BellOff size={16} style={{ color: 'var(--text-muted)' }} />}
+                        <span>{isChatMuted(activeChat) ? 'Unmute Notifications' : 'Mute Notifications'}</span>
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Danger Actions Area */}
                   <div className="info-section" style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--glass-border)' }}>
@@ -4304,77 +7020,7 @@ function App() {
         </div>
       )}
 
-      {/* Profile Settings Modal */}
-      {isProfileModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-container glass-panel animate-fade-in" style={{ maxWidth: '420px' }}>
-            <div className="modal-header border-b">
-              <h3>Profile Settings</h3>
-              <button className="icon-btn" onClick={() => setIsProfileModalOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleUpdateProfile}>
-              <div className="modal-body">
-                {profileError && <div className="admin-alert error">{profileError}</div>}
-                {profileSuccess && <div className="admin-alert success">{profileSuccess}</div>}
 
-                {/* Profile Pic Upload Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '15px' }}>
-                  <div className="avatar" style={{ width: '80px', height: '80px', fontSize: '2rem', borderRadius: '50%' }}>
-                    {profilePicUrl ? (
-                      <img src={profilePicUrl} alt="Profile Preview" style={{ borderRadius: '50%' }} />
-                    ) : (
-                      user?.username?.substring(0, 2).toUpperCase()
-                    )}
-                  </div>
-                  <input 
-                    type="file" 
-                    ref={profilePicFileInputRef} 
-                    style={{ display: 'none' }} 
-                    onChange={handleProfilePicUpload} 
-                    accept="image/*"
-                  />
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary btn-sm" 
-                    onClick={() => profilePicFileInputRef.current?.click()}
-                    disabled={uploadingProfilePic}
-                  >
-                    {uploadingProfilePic ? 'Uploading...' : 'Change Profile Picture'}
-                  </button>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: '15px' }}>
-                  <label>Username</label>
-                  <input 
-                    type="text" 
-                    className="input-field" 
-                    value={profileUsername}
-                    onChange={(e) => setProfileUsername(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>New Password (leave blank to keep current)</label>
-                  <input 
-                    type="password" 
-                    placeholder="Enter new password..." 
-                    className="input-field" 
-                    value={profilePassword}
-                    onChange={(e) => setProfilePassword(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer border-t">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsProfileModalOpen(false)}>Close</button>
-                <button type="submit" className="btn btn-primary" disabled={uploadingProfilePic}>Save Settings</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* YouTube link action dropdown options */}
       {ytDropdown.isOpen && (() => {
@@ -4427,7 +7073,7 @@ function App() {
                   onClick={() => {
                     const videoId = extractYouTubeId(ytDropdown.url);
                     setYtDropdown(prev => ({ ...prev, isOpen: false }));
-                    setSyncPlayActive(true);
+                    changeSyncPlayActive(true);
                     setIsInfoPanelOpen(false); // Close details panel
                     
                     // Emit change video event to socket
@@ -4489,7 +7135,8 @@ function App() {
       {previewImageUrl && (
         <div 
           className="modal-overlay lightbox-overlay animate-fade-in" 
-          onClick={() => setPreviewImageUrl(null)}
+          onMouseDown={handleOverlayMouseDown}
+          onMouseUp={handleOverlayMouseUp}
           style={{ 
             position: 'fixed',
             top: 0,
@@ -4506,9 +7153,45 @@ function App() {
             padding: '40px'
           }}
         >
+          {/* Annotate Button */}
+          <button 
+            className="icon-btn lightbox-annotate-btn" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsAnnotating(!isAnnotating);
+            }}
+            title={isAnnotating ? 'Switch to Viewing Mode' : 'Annotate Photo'}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '70px',
+              color: isAnnotating ? 'var(--accent-primary, #00ffcc)' : '#fff',
+              background: isAnnotating ? 'rgba(0, 255, 210, 0.1)' : 'rgba(255, 255, 255, 0.1)',
+              border: isAnnotating ? '1px solid var(--accent-primary, #00ffcc)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '50%',
+              padding: '10px',
+              cursor: 'pointer',
+              zIndex: 15001,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all var(--transition-fast)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isAnnotating ? 'rgba(0, 255, 210, 0.15)' : 'rgba(255, 255, 255, 0.2)';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isAnnotating ? 'rgba(0, 255, 210, 0.1)' : 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            {isAnnotating ? <Eye size={20} /> : <Edit size={20} />}
+          </button>
+
           <button 
             className="icon-btn lightbox-close-btn" 
-            onClick={() => setPreviewImageUrl(null)}
+            onClick={closeLightbox}
             style={{
               position: 'absolute',
               top: '20px',
@@ -4546,20 +7229,298 @@ function App() {
               position: 'relative'
             }}
           >
-            <img 
-              src={previewImageUrl} 
-              alt="Full Resolution Preview" 
-              className="lightbox-image"
-              style={{
-                maxWidth: '90%',
-                maxHeight: '90%',
-                objectFit: 'contain',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
-              }}
-            />
+            <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', maxHeight: '100%' }}>
+              <img 
+                ref={imgRef}
+                src={previewImageUrl} 
+                alt="Full Resolution Preview" 
+                className="lightbox-image"
+                crossOrigin="anonymous"
+                onLoad={handleImageLoad}
+                style={{
+                  maxWidth: '90vw',
+                  maxHeight: '75vh',
+                  display: 'block',
+                  width: 'auto',
+                  height: 'auto',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  userSelect: 'none'
+                }}
+              />
+              <canvas 
+                ref={canvasRef}
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onMouseLeave={stopDrawing}
+                onTouchStart={startDrawing}
+                onTouchMove={draw}
+                onTouchEnd={stopDrawing}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  cursor: getCanvasCursor(),
+                  touchAction: 'none',
+                  display: isAnnotating ? 'block' : 'none',
+                  zIndex: 15002
+                }}
+              />
+            </div>
           </div>
+
+          {/* Floating Draggable Annotation Toolbar */}
+          {isAnnotating && (
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                left: `${toolbarPos.x}px`,
+                top: `${toolbarPos.y}px`,
+                background: 'rgba(15, 17, 28, 0.85)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '16px',
+                padding: '16px',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+                zIndex: 15005,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                width: '210px',
+                userSelect: 'none',
+                transition: 'box-shadow 0.3s ease, border-color 0.3s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 20px 50px rgba(0, 255, 210, 0.15), 0 20px 40px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+              }}
+            >
+              {/* Drag handle */}
+              <div 
+                onMouseDown={handleMouseDown}
+                onTouchStart={handleTouchStart}
+                style={{
+                  cursor: 'move',
+                  width: '100%',
+                  height: '24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '3px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                  paddingBottom: '10px'
+                }}
+              >
+                <div style={{ width: '36px', height: '3px', background: 'rgba(255, 255, 255, 0.3)', borderRadius: '2px' }} />
+                <div style={{ width: '24px', height: '3px', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '2px' }} />
+                <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: 'bold', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: '2px' }}>Drag Handle</span>
+              </div>
+
+              {/* Tool selection */}
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button 
+                  onClick={() => setTool('draw')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: tool === 'draw' ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    color: tool === 'draw' ? 'var(--accent-primary, #00ffcc)' : '#fff',
+                    fontWeight: tool === 'draw' ? '600' : '400',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Edit size={14} /> Draw
+                </button>
+                <button 
+                  onClick={() => setTool('erase')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: tool === 'erase' ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    color: tool === 'erase' ? 'var(--accent-primary, #00ffcc)' : '#fff',
+                    fontWeight: tool === 'erase' ? '600' : '400',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Ban size={14} /> Erase
+                </button>
+              </div>
+
+              {/* Color selection */}
+              {tool === 'draw' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', paddingLeft: '2px' }}>Color</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'flex-start' }}>
+                    {[
+                      { hex: '#ff4d4d', name: 'Red' },
+                      { hex: '#ffeb3b', name: 'Yellow' },
+                      { hex: '#4caf50', name: 'Green' },
+                      { hex: '#2196f3', name: 'Blue' },
+                      { hex: '#ffffff', name: 'White' },
+                      { hex: '#000000', name: 'Black' }
+                    ].map(color => (
+                      <button 
+                        key={color.hex}
+                        onClick={() => setBrushColor(color.hex)}
+                        title={color.name}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: color.hex,
+                          border: brushColor === color.hex ? '2px solid #fff' : '1px solid rgba(255,255,255,0.2)',
+                          cursor: 'pointer',
+                          boxShadow: brushColor === color.hex ? '0 0 10px rgba(255, 255, 255, 0.6)' : 'none',
+                          transform: brushColor === color.hex ? 'scale(1.15)' : 'scale(1)',
+                          transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Brush size slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
+                  <span>Brush Size</span>
+                  <span style={{ fontWeight: '600', color: 'var(--accent-primary, #00ffcc)' }}>{brushSize}px</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    type="range" 
+                    min="2" 
+                    max="50" 
+                    value={brushSize} 
+                    onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                    style={{ 
+                      flex: 1, 
+                      cursor: 'pointer',
+                      accentColor: 'var(--accent-primary, #00ffcc)',
+                      height: '4px',
+                      borderRadius: '2px',
+                      background: 'rgba(255,255,255,0.1)'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Undo & Clear */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={undo}
+                  disabled={history.length === 0}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    color: history.length === 0 ? 'rgba(255,255,255,0.25)' : '#fff',
+                    cursor: history.length === 0 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: '0.8rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <History size={13} /> Undo
+                </button>
+                <button 
+                  onClick={clearCanvas}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: '0.8rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 99, 99, 0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 99, 99, 0.2)';
+                    e.currentTarget.style.color = '#ff6b6b';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                >
+                  <Trash2 size={13} /> Clear
+                </button>
+              </div>
+
+              {/* Update button */}
+              <button 
+                onClick={handleUpdateImage}
+                disabled={isUpdating}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: 'var(--accent-primary, #00ffcc)',
+                  color: '#090a10',
+                  fontWeight: '700',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: isUpdating ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '0.875rem',
+                  boxShadow: '0 0 15px rgba(0, 255, 210, 0.2)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {isUpdating ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check size={15} /> Update Photo
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -4688,6 +7649,104 @@ function App() {
           </div>
         </div>
       )}
+      {/* Toast Notifications */}
+      <div className="toast-container" style={{
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        zIndex: 10000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        pointerEvents: 'none'
+      }}>
+        {toasts.map(toast => (
+          <div 
+            key={toast.id} 
+            className="toast-notification glass-panel animate-slide-in" 
+            style={{
+              pointerEvents: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              background: 'rgba(15, 17, 26, 0.9)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
+              cursor: 'pointer',
+              minWidth: '280px',
+              maxWidth: '360px',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)'
+            }}
+            onClick={() => {
+              toast.onClick?.();
+              removeToast(toast.id);
+            }}
+          >
+            {toast.avatar ? (
+              <img 
+                src={toast.avatar} 
+                alt={toast.title} 
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  objectFit: 'cover'
+                }} 
+              />
+            ) : (
+              <div 
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'var(--primary)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '600',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {toast.title.substring(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div style={{ flexGrow: 1, overflow: 'hidden' }}>
+              <div style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {toast.title}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                {toast.message}
+              </div>
+            </div>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                removeToast(toast.id);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -5116,7 +8175,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
     fetchAdminData();
   }, []);
 
-  const fetchAdminData = async () => {
+  async function fetchAdminData() {
     try {
       const response = await fetch(`${API_BASE_URL}/admin/settings`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -5294,7 +8353,6 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
           <Shield className="admin-header-icon" />
           <div>
             <h2>Alaap Control Center</h2>
-            <p>Manage system metrics, security, registration rules, and users.</p>
           </div>
         </div>
         <button className="icon-btn close-admin-btn" onClick={onClose} title="Back to Chats">
@@ -5302,7 +8360,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
         </button>
       </div>
 
-      <div className="admin-tabs border-b" style={{ display: 'flex', gap: '8px', padding: '0 24px', background: 'rgba(0,0,0,0.1)' }}>
+      <div className="admin-tabs border-b" style={{ display: 'flex', gap: '8px', padding: '0 24px', background: 'rgba(0,0,0,0.1)', marginBottom: '24px' }}>
         <button 
           className={`admin-tab-btn ${activeTab === 'system' ? 'active' : ''}`}
           onClick={() => setActiveTab('system')}
@@ -5860,6 +8918,401 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// Settings Center Component Panel (alaap center style)
+// -------------------------------------------------------------
+function SettingsCenter({ 
+  token, 
+  user, 
+  setUser, 
+  onClose, 
+  logout,
+  deferredPrompt,
+  setDeferredPrompt,
+  notificationSettings,
+  setNotificationSettings,
+  requestNotificationPermission
+}) {
+  const [profileUsername, setProfileUsername] = useState(user?.username || '');
+  const [profilePassword, setProfilePassword] = useState('');
+  const [profilePicUrl, setProfilePicUrl] = useState(user?.profilePic || '');
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
+  const profilePicFileInputRef = useRef(null);
+
+  const handleProfilePicUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingProfilePic(true);
+    setProfileError('');
+    setProfileSuccess('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setProfilePicUrl(data.fileUrl);
+        setProfileSuccess('Image uploaded! Click Save Settings to update your profile.');
+      } else {
+        setProfileError('Failed to upload profile picture.');
+      }
+    } catch (err) {
+      setProfileError('Error uploading image.');
+    } finally {
+      setUploadingProfilePic(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setProfileError('');
+    setProfileSuccess('');
+
+    const payload = {
+      profilePic: profilePicUrl
+    };
+
+    if (profilePassword.trim()) {
+      if (profilePassword.length < 6) {
+        setProfileError('Password must be at least 6 characters.');
+        return;
+      }
+      payload.password = profilePassword;
+    }
+
+    if (user?.username && profileUsername.toLowerCase() !== user.username.toLowerCase()) {
+      if (profileUsername.trim().length < 3) {
+        setProfileError('Username must be at least 3 characters.');
+        return;
+      }
+      payload.username = profileUsername;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setProfileSuccess('Profile updated successfully!');
+        setUser(data.user);
+        setProfilePassword('');
+      } else {
+        setProfileError(data.error || 'Failed to update profile.');
+      }
+    } catch (err) {
+      setProfileError('Network error during profile update.');
+    }
+  };
+
+  return (
+    <div className="admin-pane settings-center-pane animate-fade-in">
+      <div className="admin-header border-b">
+        <div className="admin-title-area">
+          <Settings className="admin-header-icon" />
+          <div>
+            <h2>Settings Center</h2>
+          </div>
+        </div>
+        <button className="close-admin-btn icon-btn" onClick={onClose} title="Back to Chats">
+          <X size={24} />
+        </button>
+      </div>
+
+      <div className="settings-center-content">
+        <div className="settings-center-card glass-panel animate-fade-in">
+          <form onSubmit={handleUpdateProfile}>
+            {profileError && <div className="admin-alert error" style={{ marginBottom: '15px' }}>{profileError}</div>}
+            {profileSuccess && <div className="admin-alert success" style={{ marginBottom: '15px' }}>{profileSuccess}</div>}
+
+            {/* Profile Pic Upload Section */}
+            <div className="profile-upload-section">
+              <div className="avatar settings-avatar">
+                {profilePicUrl ? (
+                  <img src={profilePicUrl} alt="Profile Preview" />
+                ) : (
+                  user?.username?.substring(0, 2).toUpperCase()
+                )}
+              </div>
+              <input 
+                type="file" 
+                ref={profilePicFileInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handleProfilePicUpload} 
+                accept="image/*"
+              />
+              <button 
+                type="button" 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => profilePicFileInputRef.current?.click()}
+                disabled={uploadingProfilePic}
+                style={{ marginTop: '12px' }}
+              >
+                {uploadingProfilePic ? 'Uploading...' : 'Change Profile Picture'}
+              </button>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '15px' }}>
+              <label>Username</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                value={profileUsername}
+                onChange={(e) => setProfileUsername(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group" style={{ marginTop: '15px' }}>
+              <label>New Password (leave blank to keep current)</label>
+              <input 
+                type="password" 
+                placeholder="Enter new password..." 
+                className="input-field" 
+                value={profilePassword}
+                onChange={(e) => setProfilePassword(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-footer">
+              <button type="submit" className="btn btn-primary" disabled={uploadingProfilePic}>
+                Save Settings
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Notification Preferences Card */}
+        <div className="settings-center-card glass-panel animate-fade-in">
+          <h3>Notification Preferences</h3>
+          <p>Configure how you want to be notified for incoming messages in user and group chats.</p>
+          
+          <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Direct Chats Settings */}
+            <div>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '12px' }}>
+                Direct / User Chats
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Sound Alert Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>Sound Alerts</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Play a chime when a new message is received</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => setNotificationSettings(prev => ({
+                      ...prev,
+                      userChats: { ...prev.userChats, soundEnabled: !prev.userChats.soundEnabled }
+                    }))}
+                  >
+                    {notificationSettings.userChats.soundEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+
+                {/* In-App Toast Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>In-App Toast Banners</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Show floating alerts on your screen</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => setNotificationSettings(prev => ({
+                      ...prev,
+                      userChats: { ...prev.userChats, inAppBannerEnabled: !prev.userChats.inAppBannerEnabled }
+                    }))}
+                  >
+                    {notificationSettings.userChats.inAppBannerEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+
+                {/* Desktop Native Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>Desktop Push Notifications</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Receive notifications when the app is in background</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => {
+                      if (!notificationSettings.userChats.desktopEnabled) {
+                        requestNotificationPermission('userChats');
+                      } else {
+                        setNotificationSettings(prev => ({
+                          ...prev,
+                          userChats: { ...prev.userChats, desktopEnabled: false }
+                        }));
+                      }
+                    }}
+                  >
+                    {notificationSettings.userChats.desktopEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Group Chats Settings */}
+            <div style={{ marginTop: '10px' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '12px' }}>
+                Group Chats
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Sound Alert Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>Sound Alerts</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Play a chime when a new message is received in groups</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => setNotificationSettings(prev => ({
+                      ...prev,
+                      groupChats: { ...prev.groupChats, soundEnabled: !prev.groupChats.soundEnabled }
+                    }))}
+                  >
+                    {notificationSettings.groupChats.soundEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+
+                {/* In-App Toast Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>In-App Toast Banners</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Show floating alerts for group messages</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => setNotificationSettings(prev => ({
+                      ...prev,
+                      groupChats: { ...prev.groupChats, inAppBannerEnabled: !prev.groupChats.inAppBannerEnabled }
+                    }))}
+                  >
+                    {notificationSettings.groupChats.inAppBannerEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+
+                {/* Desktop Native Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>Desktop Push Notifications</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Receive desktop notifications for group messages</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="toggle-btn"
+                    onClick={() => {
+                      if (!notificationSettings.groupChats.desktopEnabled) {
+                        requestNotificationPermission('groupChats');
+                      } else {
+                        setNotificationSettings(prev => ({
+                          ...prev,
+                          groupChats: { ...prev.groupChats, desktopEnabled: false }
+                        }));
+                      }
+                    }}
+                  >
+                    {notificationSettings.groupChats.desktopEnabled ? <ToggleRight size={38} className="toggle-on" style={{ color: 'var(--primary)' }} /> : <ToggleLeft size={38} className="toggle-off" style={{ color: 'var(--text-muted)' }} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* PWA / App Installation Card */}
+        <div className="settings-center-card glass-panel animate-fade-in">
+          <h3>Desktop & Mobile App</h3>
+          <p>Install Alaap as a Progressive Web App (PWA) to run it as a native standalone app with a dedicated window, startup shortcut, and improved system integration.</p>
+          
+          <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(0, 0, 0, 0.2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="status-dot online" style={{ position: 'static', display: 'inline-block' }}></div>
+                <span style={{ fontSize: '0.95rem', fontWeight: 500 }}>
+                  App Status
+                </span>
+              </div>
+              <span className="admin-badge" style={{ background: (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) ? 'var(--accent-emerald)' : 'var(--primary)', color: '#fff', padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 600 }}>
+                {(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) ? 'Running Standalone (App Mode)' : 'Running in Browser'}
+              </span>
+            </div>
+
+            {(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) ? (
+              <div className="admin-alert success" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Sparkles size={18} />
+                <span>You are running the premium Alaap app experience. Updates are automatically synced in the background.</span>
+              </div>
+            ) : deferredPrompt ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Alaap is ready to install on your device. Click the button below to complete the setup.</p>
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={async () => {
+                    if (!deferredPrompt) return;
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    if (outcome === 'accepted') {
+                      setDeferredPrompt(null);
+                    }
+                  }}
+                  style={{ width: 'fit-content' }}
+                >
+                  <Download size={16} />
+                  <span>Install Alaap App</span>
+                </button>
+              </div>
+            ) : (
+              <div className="admin-alert" style={{ margin: 0, background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'start', gap: '10px', border: '1px dashed var(--glass-border)' }}>
+                <Info size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--primary)' }} />
+                <div style={{ fontSize: '0.85rem' }}>
+                  To install Alaap on this device, look for the install icon (<span style={{ fontWeight: 600 }}>⊕</span> or desktop icon) in your browser's address bar, or open the browser menu and select <span style={{ fontWeight: 600 }}>"Add to Home screen"</span> / <span style={{ fontWeight: 600 }}>"Install Alaap"</span>.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="settings-center-card glass-panel danger-zone-card animate-fade-in">
+          <h3>Logout & Session</h3>
+          <p>Sign out of your account on this device. You will need to log back in to access your chats.</p>
+          <div className="danger-zone-action">
+            <button className="btn btn-secondary text-danger" onClick={logout}>
+              <LogOut size={16} />
+              <span>Logout Account</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

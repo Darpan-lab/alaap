@@ -1649,12 +1649,14 @@
     display: none !important;
   }
 
-  /* Admin selected view: show admin dashboard, hide sidebar */
-  .admin-selected .sidebar {
+  /* Admin/Settings selected view: show dashboard/settings center, hide sidebar */
+  .admin-selected .sidebar,
+  .settings-selected .sidebar {
     display: none !important;
   }
-
-  .admin-selected .admin-pane {
+  
+  .admin-selected .admin-pane,
+  .settings-selected .admin-pane {
     display: flex !important;
   }
 
@@ -3125,4 +3127,87 @@
   background: rgba(255, 255, 255, 0.08);
   transform: scale(1.05);
 }
+
+/* Settings Center Panel Styles */
+.settings-center-content {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .settings-center-content {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+.settings-center-card {
+  padding: 28px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: var(--shadow-lg);
+}
+
+.profile-upload-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.settings-avatar.avatar {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  font-size: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-highlight);
+  border: 2px solid var(--glass-border);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.settings-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+
+.danger-zone-card h3 {
+  color: var(--accent-rose);
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: -5px;
+}
+
+.danger-zone-card p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.danger-zone-action {
+  display: flex;
+  margin-top: 10px;
+}
+
+
 
