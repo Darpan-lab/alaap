@@ -10,6 +10,7 @@ import { useChat } from '../../context/ChatContext';
 import { useDialog } from '../../context/DialogContext';
 import { EMOJI_CATEGORIES, EMOJI_KEYWORDS, REACTION_EMOJIS } from '../../utils/constants';
 import { API_BASE_URL } from '../../config';
+import { formatBDMessageTime } from '../../utils/dateUtils';
 import AudioMessagePlayer from '../Media/AudioMessagePlayer';
 
 export function ChatArea({ 
@@ -471,7 +472,11 @@ export function ChatArea({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleEmojiClick = (emoji) => {
+  const handleEmojiClick = (emoji, e) => {
+    e?.preventDefault();
+    if (e?.currentTarget) {
+      e.currentTarget.blur();
+    }
     const input = document.querySelector('.chat-text-input-inside');
     if (!input) {
       setMessageInput(prev => prev + emoji);
@@ -875,7 +880,7 @@ export function ChatArea({
                       )}
                     </div>
                     <span className="message-time">
-                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatBDMessageTime(msg.createdAt)}
                       {msg.isEdited && <span className="edited-indicator"> (edited)</span>}
                       {isOwn && (() => {
                         const currentId = user?.id || user?._id;
@@ -1185,8 +1190,10 @@ export function ChatArea({
                                       <button 
                                         key={emoji} 
                                         type="button" 
+                                        tabIndex={-1}
                                         className="emoji-item"
-                                        onClick={() => handleEmojiClick(emoji)}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={(e) => handleEmojiClick(emoji, e)}
                                       >
                                         {emoji}
                                       </button>
@@ -1210,6 +1217,13 @@ export function ChatArea({
                         onChange={(e) => {
                           setMessageInput(e.target.value);
                           handleTyping();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendMessage(e);
+                            setEmojiPickerOpen(false);
+                          }
                         }}
                       />
 

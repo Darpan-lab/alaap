@@ -1557,6 +1557,64 @@
   padding: 20px;
 }
 
+/* Chat Card 3-Dot Dropdown Styles */
+.chat-card-menu-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.chat-card-menu-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  opacity: 1;
+}
+
+.chat-card-dropdown {
+  position: absolute;
+  top: 36px;
+  right: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  min-width: 160px;
+}
+
+.chat-card-dropdown .dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.chat-card-dropdown .dropdown-item.danger {
+  color: #f43f5e;
+}
+
+.chat-card-dropdown .dropdown-item.danger:hover {
+  background: rgba(244, 63, 94, 0.15);
+}
+
 .modal-footer {
   padding: 15px 20px;
   display: flex;
@@ -3208,6 +3266,121 @@
   display: flex;
   margin-top: 10px;
 }
+
+/* SyncPlay Volume Slider Custom Ball Handle / Thumb */
+.syncplay-volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  outline: none;
+  border-radius: 2px;
+}
+
+.syncplay-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.syncplay-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+.syncplay-volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.syncplay-volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.25);
+}
+
+/* SyncPlay YouTube-style Bottom Control Hover Wrappers */
+.syncplay-control-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+  padding: 0;
+  outline: none;
+}
+
+.syncplay-control-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.syncplay-control-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.syncplay-control-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 14px;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.syncplay-control-pill:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.syncplay-volume-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 20px;
+  transition: background-color 0.2s ease;
+}
+
+.syncplay-volume-wrap:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.syncplay-speed-select {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 12px;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  height: 26px;
+  width: auto;
+  min-width: 36px;
+  text-align: center;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.syncplay-speed-select:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+
 
 
 

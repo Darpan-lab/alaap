@@ -8,6 +8,9 @@ import {
   Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff
 } from 'lucide-react';
 import { API_BASE_URL, SOCKET_URL } from './config';
+import { formatBDMessageTime, formatBDTimeOnly } from './utils/dateUtils';
+import AudioMessagePlayer from './components/Media/AudioMessagePlayer';
+import { JellyfinModal, JellyfinLogo } from './components/SyncPlay/JellyfinModal';
 import './App.css';
 
 const EMOJI_CATEGORIES = [
@@ -81,110 +84,6 @@ const EMOJI_KEYWORDS = {
 };
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-
-const AudioMessagePlayer = ({ src }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const audioRef = useRef(null);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration)) {
-        setDuration(audio.duration);
-      }
-    };
-    
-    if (audio.readyState >= 1 && audio.duration) {
-      setDuration(audio.duration);
-    }
-
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('durationchange', handleLoadedMetadata);
-
-    return () => {
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('durationchange', handleLoadedMetadata);
-    };
-  }, [src]);
-
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play().catch(err => console.error("Audio playback error:", err));
-    }
-  };
-
-  const handleSliderChange = (e) => {
-    if (!audioRef.current) return;
-    const time = parseFloat(e.target.value);
-    audioRef.current.currentTime = time;
-    setCurrentTime(time);
-  };
-
-  const formatTime = (secs) => {
-    if (isNaN(secs) || !isFinite(secs)) return '0:00';
-    const mins = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${mins}:${s < 10 ? '0' : ''}${s}`;
-  };
-
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  return (
-    <div className="custom-audio-player">
-      <audio ref={audioRef} src={src} preload="metadata" />
-      
-      <button 
-        type="button" 
-        className="audio-play-btn" 
-        onClick={togglePlay}
-        title={isPlaying ? "Pause" : "Play"}
-      >
-        {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-      </button>
-
-      <div className="audio-player-info">
-        <div className="audio-progress-container">
-          <input 
-            type="range" 
-            min="0" 
-            max={duration || 100} 
-            value={currentTime} 
-            onChange={handleSliderChange}
-            className="audio-progress-slider"
-            style={{
-              background: `linear-gradient(to right, var(--audio-progress-fill, var(--primary)) ${progressPercent}%, var(--audio-progress-track, rgba(255, 255, 255, 0.1)) ${progressPercent}%)`
-            }}
-          />
-        </div>
-        <div className="audio-time-row">
-          <span className="audio-time-label">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-        </div>
-      </div>
-      
-      <div className="audio-wave-icon">
-        <Mic size={16} />
-      </div>
-    </div>
-  );
-};
 
 const VideoPlayerModal = ({ video, onClose }) => {
   const videoRef = useRef(null);
@@ -728,30 +627,9 @@ function App() {
   const [loadingUser, setLoadingUser] = useState(!!localStorage.getItem('alaap_token'));
 
   // Width Resizing States
-  const [sidebarWidth, setSidebarWidth] = useState(320); // Default sidebar width
+  const sidebarWidth = 320; // Fixed sidebar width
   const [syncPlayWidth, setSyncPlayWidth] = useState(600); // Default sync play width
   const [infoPanelWidth, setInfoPanelWidth] = useState(320); // Default info panel width
-
-  const handleSidebarResizeMouseDown = (e) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      setSidebarWidth(Math.max(220, Math.min(450, startWidth + deltaX)));
-    };
-    
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.body.style.cursor = 'col-resize';
-  };
 
   const handleSyncPlayResizeMouseDown = (e) => {
     e.preventDefault();
@@ -1136,7 +1014,7 @@ function App() {
   // Handle automatic cache reset on client version update
   useEffect(() => {
     const checkVersionAndResetCache = async () => {
-      const APP_VERSION = '1.0.2'; // Increment this value on code updates
+      const APP_VERSION = '1.0.3'; // Increment this value on code updates
       window.APP_VERSION = APP_VERSION; // Expose globally for console access
       const storedVersion = localStorage.getItem('alaap_app_version');
       
@@ -1566,6 +1444,21 @@ function App() {
   const [syncPlayIsPlaying, setSyncPlayIsPlaying] = useState(false);
   const [syncPlayInputUrl, setSyncPlayInputUrl] = useState('');
   const [isSyncPlayHeaderHidden, setIsSyncPlayHeaderHidden] = useState(false);
+  const [isJellyfinModalOpen, setIsJellyfinModalOpen] = useState(false);
+
+  const [cardMenuOpenId, setCardMenuOpenId] = useState(null);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (cardMenuOpenId !== null) {
+        setCardMenuOpenId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [cardMenuOpenId]);
 
   // Custom Video Player States
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
@@ -1580,8 +1473,34 @@ function App() {
   const [isHoveringTimeline, setIsHoveringTimeline] = useState(false);
   const [videoPlaybackRate, setVideoPlaybackRate] = useState(1);
   const [isHoveringCustomVolume, setIsHoveringCustomVolume] = useState(false);
+  const clickTimeoutRef = useRef(null);
+  const jellyfinDurationRef = useRef(null);
+  const [skipIndicator, setSkipIndicator] = useState(null);
+
+  const [jellyfinStatus, setJellyfinStatus] = useState({ configured: false, globalEnabled: false, userEnabled: false, canUseJellyfin: false });
+
+  const fetchJellyfinStatus = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/jellyfin/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJellyfinStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch Jellyfin status:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchJellyfinStatus();
+  }, [token]);
 
   // Floating Chat States & Refs
+  const getDefaultFloatingChatHeight = () => typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.6) : 400;
+
   const [showFloatingChat, setShowFloatingChat] = useState(false);
   const [floatingChatInput, setFloatingChatInput] = useState('');
   const [isHoveringFloatingChat, setIsHoveringFloatingChat] = useState(false);
@@ -1590,9 +1509,65 @@ function App() {
   const [isDraggingFloatingChat, setIsDraggingFloatingChat] = useState(false);
   const dragStartOffset = useRef({ x: 0, y: 0 });
   const floatingChatContainerRef = useRef(null);
-  const [floatingChatSize, setFloatingChatSize] = useState({ width: 320, height: null });
+  const [floatingChatSize, setFloatingChatSize] = useState(() => ({ 
+    width: 340, 
+    height: getDefaultFloatingChatHeight() 
+  }));
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartData = useRef({ startX: 0, startY: 0, startWidth: 0, startHeight: 0, startLeft: 0, startTop: 0, handleType: '' });
+
+  const floatingChatInputRef = useRef(null);
+
+  // Floating Chat Emoji & Upload States
+  const [floatingEmojiPickerOpen, setFloatingEmojiPickerOpen] = useState(false);
+  const [floatingEmojiSearch, setFloatingEmojiSearch] = useState('');
+  const [floatingEmojiCategory, setFloatingEmojiCategory] = useState('All');
+  const floatingEmojiPickerRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutsideFloatingEmoji(event) {
+      if (floatingEmojiPickerRef.current && !floatingEmojiPickerRef.current.contains(event.target)) {
+        setFloatingEmojiPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutsideFloatingEmoji);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideFloatingEmoji);
+    };
+  }, []);
+
+  const handleFloatingEmojiClick = (emoji, e) => {
+    e?.preventDefault();
+    if (e?.currentTarget) {
+      e.currentTarget.blur();
+    }
+    setFloatingChatInput(prev => prev + emoji);
+    setTimeout(() => {
+      if (floatingChatInputRef.current) {
+        floatingChatInputRef.current.focus();
+      }
+    }, 0);
+  };
+
+  const getFloatingFilteredEmojis = () => {
+    if (!floatingEmojiSearch) {
+      if (floatingEmojiCategory === 'All') return EMOJI_CATEGORIES;
+      return EMOJI_CATEGORIES.filter(cat => cat.name === floatingEmojiCategory);
+    }
+    const q = floatingEmojiSearch.toLowerCase();
+    const result = [];
+    EMOJI_CATEGORIES.forEach(cat => {
+      const matched = cat.emojis.filter(emoji => {
+        const keywords = EMOJI_KEYWORDS[emoji] || '';
+        return keywords.includes(q) || emoji.includes(q);
+      });
+      if (matched.length > 0) {
+        result.push({ name: cat.name, emojis: matched });
+      }
+    });
+    return result;
+  };
+
 
   // SyncPlay History States
   const [syncPlayHistory, setSyncPlayHistory] = useState([]);
@@ -1604,7 +1579,7 @@ function App() {
       setShowFloatingChat(false);
       setIsHoveringFloatingChat(false);
       setFloatingChatPos({ left: null, top: null });
-      setFloatingChatSize({ width: 320, height: null });
+      setFloatingChatSize({ width: 340, height: getDefaultFloatingChatHeight() });
     }
   }, [syncPlayActive]);
 
@@ -1981,15 +1956,19 @@ function App() {
 
 
   // Emoji helper functions
-  const handleEmojiClick = (emoji) => {
-    const input = document.querySelector('.chat-text-input');
+  const handleEmojiClick = (emoji, e) => {
+    e?.preventDefault();
+    if (e?.currentTarget) {
+      e.currentTarget.blur();
+    }
+    const input = document.querySelector('.chat-text-input-inside, .chat-text-input');
     if (!input) {
       setMessageInput(prev => prev + emoji);
       return;
     }
 
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
+    const start = input.selectionStart ?? messageInput.length;
+    const end = input.selectionEnd ?? messageInput.length;
     const text = messageInput;
     const before = text.substring(0, start);
     const after = text.substring(end, text.length);
@@ -2590,7 +2569,7 @@ function App() {
       });
     });
 
-    socket.on('sync_play_broadcast', ({ chatId, videoId, videoTitle, videoUrl, downloadStatus, downloadProgress, downloadError, action, currentTime, isPlaying, senderId, history }) => {
+    socket.on('sync_play_broadcast', ({ chatId, videoId, videoTitle, videoUrl, downloadStatus, downloadProgress, downloadError, action, currentTime, isPlaying, senderId, history, durationSec }) => {
       if (activeChatRef.current && activeChatRef.current._id === chatId) {
         // Block check
         let blockActive = false;
@@ -2612,6 +2591,11 @@ function App() {
         setSyncPlayIsPlaying(isPlaying);
         if (history) {
           setSyncPlayHistory(history);
+        }
+        
+        if (durationSec && durationSec > 0) {
+          jellyfinDurationRef.current = durationSec;
+          setVideoDuration(durationSec);
         }
 
         if (downloadStatus === 'completed' && videoPlayerRef.current) {
@@ -2937,6 +2921,10 @@ function App() {
       });
     });
 
+    socket.on('jellyfin_status_updated', () => {
+      fetchJellyfinStatus();
+    });
+
     // Fetch initial chat list
     fetchChats();
 
@@ -2976,6 +2964,12 @@ function App() {
         setSyncPlayDownloadError(activeChat.syncPlay.downloadError || '');
         setSyncPlayIsPlaying(activeChat.syncPlay.isPlaying);
         setSyncPlayHistory(activeChat.syncPlay.history || []);
+        
+        if (activeChat.syncPlay.durationSec && activeChat.syncPlay.durationSec > 0) {
+          jellyfinDurationRef.current = activeChat.syncPlay.durationSec;
+          setVideoDuration(activeChat.syncPlay.durationSec);
+        }
+        
         setShowSyncPlayHistoryTab(false);
       } else {
         setSyncPlayActive(false);
@@ -3168,6 +3162,8 @@ function App() {
     e?.preventDefault();
     if (!messageInput.trim() || !activeChat) return;
 
+    setEmojiPickerOpen(false);
+
     if (editingMessage) {
       socketRef.current.emit('edit_message', {
         messageId: editingMessage._id,
@@ -3207,6 +3203,7 @@ function App() {
 
     socketRef.current?.emit('send_message', messageData);
     setFloatingChatInput('');
+    setFloatingEmojiPickerOpen(false);
   };
 
   const handlePointerDown = (e) => {
@@ -3314,12 +3311,16 @@ function App() {
     } else if (handleType === 'bottom-right') {
       newWidth = startWidth + deltaX;
       newHeight = startHeight + deltaY;
+    } else if (handleType === 'bottom') {
+      newHeight = startHeight + deltaY;
+    } else if (handleType === 'right') {
+      newWidth = startWidth + deltaX;
     }
 
     const minW = 240;
-    const maxW = 480;
+    const maxW = Math.min(600, parentRect.width - 20);
     const minH = 150;
-    const maxH = parentRect.height - 40;
+    const maxH = Math.min(window.innerHeight * 0.85, parentRect.height - 20);
 
     if (newWidth < minW) {
       if (handleType === 'bottom-left') {
@@ -3690,6 +3691,26 @@ function App() {
     };
   }, [syncPlayActive, activeChat?._id, syncPlayVideoId]);
 
+  // Fetch duration for Jellyfin streamed videos if available
+  useEffect(() => {
+    if (!syncPlayVideoId || !syncPlayVideoId.includes('/jellyfin/stream/')) return;
+    const parts = syncPlayVideoId.split('/stream/');
+    if (parts.length < 2) return;
+    const itemId = parts[1];
+
+    fetch(`${API_BASE_URL}/jellyfin/info/${itemId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.duration && data.duration > 0) {
+          jellyfinDurationRef.current = data.duration;
+          setVideoDuration(data.duration);
+        }
+      })
+      .catch(err => console.error('Failed to fetch Jellyfin item info:', err));
+  }, [syncPlayVideoId, token]);
+
   const handleMouseMoveControls = () => {
     setShowCustomControls(true);
     if (controlsTimeoutRef.current) {
@@ -3702,24 +3723,46 @@ function App() {
 
   const handleCustomPlayerPlayPauseToggle = (e) => {
     if (e) e.stopPropagation();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
     handlePlayerPlayPause();
   };
 
-  const handleVideoDoubleClick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!videoPlayerRef.current || !videoDuration) return;
-    
+  const handleVideoAreaClick = (e) => {
+    if (e) e.stopPropagation();
+
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
-    
-    if (clickX < width / 2) {
-      // Left side double click -> backward 10s
-      handleSkipTime(-10);
+
+    if (clickTimeoutRef.current) {
+      // Double click detected! Cancel single click timer so play/pause does NOT toggle
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+
+      if (!videoPlayerRef.current || !videoDuration) return;
+
+      if (clickX < width / 2) {
+        // Left side double click -> backward 10s
+        handleSkipTime(-10);
+        setSkipIndicator({ side: 'left', text: '10s ⏪' });
+      } else {
+        // Right side double click -> forward 10s
+        handleSkipTime(10);
+        setSkipIndicator({ side: 'right', text: '10s ⏩' });
+      }
+
+      setTimeout(() => {
+        setSkipIndicator(null);
+      }, 650);
     } else {
-      // Right side double click -> forward 10s
-      handleSkipTime(10);
+      // Single click: Wait 220ms to see if a second click arrives
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null;
+        handlePlayerPlayPause();
+      }, 220);
     }
   };
 
@@ -3754,170 +3797,128 @@ function App() {
     };
   }, [syncPlayActive, syncPlayDownloadStatus, syncPlayVideoId, syncPlayIsPlaying, activeChat?._id, handleSkipTime]);
 
-  const handleCustomTimelineClick = (e) => {
-    if (!videoPlayerRef.current || !videoDuration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const percentage = Math.max(0, Math.min(1, clickX / width));
-    const targetTime = percentage * videoDuration;
 
-    socketRef.current?.emit('sync_play_update', {
-      chatId: activeChat._id,
-      videoId: syncPlayVideoId,
-      action: 'seek',
-      currentTime: targetTime,
-      isPlaying: syncPlayIsPlaying
-    });
-
-    ignorePlayerStateChangeRef.current = true;
-    videoPlayerRef.current.currentTime = targetTime;
-    setVideoCurrentTime(targetTime);
-    setTimeout(() => {
-      ignorePlayerStateChangeRef.current = false;
-    }, 800);
-  };
 
   const handleCustomTimelineMouseDown = (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
-    if (e.button !== 0) return; // Only left click
-    
+    if (e.button !== undefined && e.button !== 0) return; // Only left click
+
+    const getTargetTime = (clientX) => {
+      if (!timelineContainerRef.current || !videoDuration) return 0;
+      const rect = timelineContainerRef.current.getBoundingClientRect();
+      const clickX = clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, clickX / rect.width));
+      return pct * videoDuration;
+    };
+
+    const targetTime = getTargetTime(e.clientX);
+
     setIsDraggingTimeline(true);
     isDraggingTimelineRef.current = true;
-    
-    const rect = timelineContainerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const targetTime = percentage * videoDuration;
-    
-    videoPlayerRef.current.currentTime = targetTime;
+    ignorePlayerStateChangeRef.current = true;
+
     setVideoCurrentTime(targetTime);
+
+    const handleMouseMove = (moveEvent) => {
+      if (!videoPlayerRef.current || !videoDuration) return;
+      const t = getTargetTime(moveEvent.clientX);
+      setVideoCurrentTime(t);
+    };
+
+    const handleMouseUp = (upEvent) => {
+      if (upEvent) upEvent.stopPropagation();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      const finalTime = getTargetTime(upEvent ? upEvent.clientX : e.clientX);
+      if (videoPlayerRef.current) {
+        videoPlayerRef.current.currentTime = finalTime;
+      }
+      setVideoCurrentTime(finalTime);
+
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime: finalTime,
+        isPlaying: syncPlayIsPlaying
+      });
+
+      setIsDraggingTimeline(false);
+      isDraggingTimelineRef.current = false;
+
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
   };
 
   const handleCustomTimelineTouchStart = (e) => {
+    if (e) e.stopPropagation();
     if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
-    
+
+    const getTouchTargetTime = (touchEvent) => {
+      if (!timelineContainerRef.current || !videoDuration) return 0;
+      const touch = touchEvent.touches?.[0] || touchEvent.changedTouches?.[0];
+      if (!touch) return videoCurrentTime;
+      const rect = timelineContainerRef.current.getBoundingClientRect();
+      const clickX = touch.clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, clickX / rect.width));
+      return pct * videoDuration;
+    };
+
+    const targetTime = getTouchTargetTime(e);
+
     setIsDraggingTimeline(true);
     isDraggingTimelineRef.current = true;
-    
-    const rect = timelineContainerRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const clickX = touch.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const targetTime = percentage * videoDuration;
-    
-    videoPlayerRef.current.currentTime = targetTime;
+    ignorePlayerStateChangeRef.current = true;
+
     setVideoCurrentTime(targetTime);
+
+    const handleTouchMove = (moveEvent) => {
+      if (moveEvent.cancelable) moveEvent.preventDefault();
+      if (!videoPlayerRef.current || !videoDuration) return;
+      const t = getTouchTargetTime(moveEvent);
+      setVideoCurrentTime(t);
+    };
+
+    const handleTouchEnd = (endEvent) => {
+      if (endEvent) endEvent.stopPropagation();
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+
+      const finalTime = getTouchTargetTime(endEvent);
+      if (videoPlayerRef.current) {
+        videoPlayerRef.current.currentTime = finalTime;
+      }
+      setVideoCurrentTime(finalTime);
+
+      socketRef.current?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime: finalTime,
+        isPlaying: syncPlayIsPlaying
+      });
+
+      setIsDraggingTimeline(false);
+      isDraggingTimelineRef.current = false;
+
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+    };
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
   };
-
-  useEffect(() => {
-    if (!isDraggingTimeline) return;
-
-    const handleMouseMoveDrag = (moveEvent) => {
-      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
-      const r = timelineContainerRef.current.getBoundingClientRect();
-      const x = moveEvent.clientX - r.left;
-      const pct = Math.max(0, Math.min(1, x / r.width));
-      const t = pct * videoDuration;
-      
-      videoPlayerRef.current.currentTime = t;
-      setVideoCurrentTime(t);
-    };
-
-    const handleMouseUpDrag = (upEvent) => {
-      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) {
-        setIsDraggingTimeline(false);
-        isDraggingTimelineRef.current = false;
-        return;
-      }
-      const r = timelineContainerRef.current.getBoundingClientRect();
-      const x = upEvent.clientX - r.left;
-      const pct = Math.max(0, Math.min(1, x / r.width));
-      const t = pct * videoDuration;
-      
-      videoPlayerRef.current.currentTime = t;
-      setVideoCurrentTime(t);
-      
-      socketRef.current?.emit('sync_play_update', {
-        chatId: activeChat._id,
-        videoId: syncPlayVideoId,
-        action: 'seek',
-        currentTime: t,
-        isPlaying: syncPlayIsPlaying
-      });
-      
-      setIsDraggingTimeline(false);
-      isDraggingTimelineRef.current = false;
-      
-      ignorePlayerStateChangeRef.current = true;
-      setTimeout(() => {
-        ignorePlayerStateChangeRef.current = false;
-      }, 800);
-    };
-
-    const handleTouchMoveDrag = (moveEvent) => {
-      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) return;
-      // Prevent scrolling when dragging on touch devices
-      if (moveEvent.cancelable) {
-        moveEvent.preventDefault();
-      }
-      const r = timelineContainerRef.current.getBoundingClientRect();
-      const touch = moveEvent.touches[0];
-      const x = touch.clientX - r.left;
-      const pct = Math.max(0, Math.min(1, x / r.width));
-      const t = pct * videoDuration;
-      
-      videoPlayerRef.current.currentTime = t;
-      setVideoCurrentTime(t);
-    };
-
-    const handleTouchEndDrag = (endEvent) => {
-      if (!videoPlayerRef.current || !videoDuration || !timelineContainerRef.current) {
-        setIsDraggingTimeline(false);
-        isDraggingTimelineRef.current = false;
-        return;
-      }
-      const r = timelineContainerRef.current.getBoundingClientRect();
-      const touch = endEvent.changedTouches[0] || endEvent.touches[0];
-      let t = videoCurrentTime;
-      if (touch) {
-        const x = touch.clientX - r.left;
-        const pct = Math.max(0, Math.min(1, x / r.width));
-        t = pct * videoDuration;
-      }
-      
-      videoPlayerRef.current.currentTime = t;
-      setVideoCurrentTime(t);
-      
-      socketRef.current?.emit('sync_play_update', {
-        chatId: activeChat._id,
-        videoId: syncPlayVideoId,
-        action: 'seek',
-        currentTime: t,
-        isPlaying: syncPlayIsPlaying
-      });
-      
-      setIsDraggingTimeline(false);
-      isDraggingTimelineRef.current = false;
-      
-      ignorePlayerStateChangeRef.current = true;
-      setTimeout(() => {
-        ignorePlayerStateChangeRef.current = false;
-      }, 800);
-    };
-
-    document.addEventListener('mousemove', handleMouseMoveDrag);
-    document.addEventListener('mouseup', handleMouseUpDrag);
-    document.addEventListener('touchmove', handleTouchMoveDrag, { passive: false });
-    document.addEventListener('touchend', handleTouchEndDrag);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMoveDrag);
-      document.removeEventListener('mouseup', handleMouseUpDrag);
-      document.removeEventListener('touchmove', handleTouchMoveDrag);
-      document.removeEventListener('touchend', handleTouchEndDrag);
-    };
-  }, [isDraggingTimeline, videoDuration, syncPlayVideoId, syncPlayIsPlaying, activeChat?._id, videoCurrentTime]);
 
   const handleVideoPlaybackRateChange = (rate) => {
     if (videoPlayerRef.current) {
@@ -3963,9 +3964,13 @@ function App() {
   };
 
   const formatTimeMMSS = (timeInSecs) => {
-    if (isNaN(timeInSecs)) return '0:00';
-    const mins = Math.floor(timeInSecs / 60);
+    if (!timeInSecs || isNaN(timeInSecs) || !isFinite(timeInSecs) || timeInSecs < 0) return '0:00';
+    const hrs = Math.floor(timeInSecs / 3600);
+    const mins = Math.floor((timeInSecs % 3600) / 60);
     const secs = Math.floor(timeInSecs % 60);
+    if (hrs > 0) {
+      return `${hrs}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
@@ -4051,16 +4056,24 @@ function App() {
     });
   };
 
-  const handleChangeVideo = (url) => {
+  const handleChangeVideo = (url, durationOverride = null) => {
     if (!url) return;
     const targetVideoId = url.trim();
+
+    if (durationOverride && durationOverride > 0) {
+      jellyfinDurationRef.current = durationOverride;
+      setVideoDuration(durationOverride);
+    } else {
+      jellyfinDurationRef.current = null;
+    }
 
     socketRef.current?.emit('sync_play_update', {
       chatId: activeChat._id,
       videoId: targetVideoId,
       action: 'change_video',
       currentTime: 0,
-      isPlaying: false
+      isPlaying: false,
+      durationSec: durationOverride
     });
 
     setSyncPlayVideoId(targetVideoId);
@@ -4932,18 +4945,55 @@ function App() {
                             <span>{details.name}</span>
                             {isChatMuted(chat) && <BellOff size={12} style={{ opacity: 0.5, color: 'var(--text-secondary)' }} />}
                           </span>
-                          {chat.latestMessage && (
-                            <span className="chat-time">
-                              {new Date(chat.latestMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+                            {chat.latestMessage && (
+                              <span className="chat-time">
+                                {formatBDTimeOnly(chat.latestMessage.createdAt)}
+                              </span>
+                            )}
+                            <button 
+                              type="button"
+                              className="chat-card-menu-btn"
+                              title="Chat Options"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
+                              }}
+                            >
+                              <MoreVertical size={14} />
+                            </button>
+
+                            {cardMenuOpenId === chat._id && (
+                              <div 
+                                className="chat-card-dropdown"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button 
+                                  type="button" 
+                                  className="dropdown-item danger"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCardMenuOpenId(null);
+                                    handleDeleteChat(chat._id);
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                  <span>Delete Chat Box</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="chat-item-preview">
                           {typerNames.length > 0 ? (
                             <span className="typing-preview">{typerNames.join(', ')} typing...</span>
                           ) : chat.latestMessage ? (
                             <span className="last-msg-text">
-                              {!chat.latestMessage.sender ? 'Deleted User: ' : (chat.latestMessage.sender._id === user?.id ? 'You: ' : `${chat.latestMessage.sender.username}: `)}
+                              {chat.latestMessage.sender && typeof chat.latestMessage.sender === 'object' ? (
+                                (chat.latestMessage.sender._id === user?.id || chat.latestMessage.sender._id === user?._id) ? 'You: ' : `${chat.latestMessage.sender.username}: `
+                              ) : (
+                                chat.latestMessage.sender === null ? 'Deleted User: ' : ''
+                              )}
                               {chat.latestMessage.fileUrl ? 
                                 (chat.latestMessage.fileType?.startsWith('audio/') ? `🎤 Voice Message` : `📎 ${chat.latestMessage.fileName}`) 
                                 : chat.latestMessage.content}
@@ -4969,32 +5019,48 @@ function App() {
         )}
       </div>
           
-          {!isSidebarHidden && (
-            <div 
-              className="resize-handle" 
-              onMouseDown={handleSidebarResizeMouseDown}
-            />
-          )}
+
 
           {/* Active Chat Area or Admin Dashboard or Settings Center */}
           {isAdminOpen ? (
             <AdminDashboard 
               token={token} 
               user={user}
+              onUpdateJellyfinStatus={fetchJellyfinStatus}
               onClose={() => {
                 setIsAdminOpen(false);
                 fetchSystemSignupSettings();
               }} 
               showConfirm={showConfirm}
               showAlert={showAlert}
-              onOpenChat={(chat) => {
-                setActiveChat(chat);
-                setChats(prev => {
-                  if (prev.some(c => c._id === chat._id)) {
-                    return prev;
+              onOpenChat={async (chat) => {
+                let targetChat = chat;
+                try {
+                  const res = await fetch(`${API_BASE_URL}/chats/${chat._id}/join`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json'
+                    }
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.chat) targetChat = data.chat;
                   }
-                  return [chat, ...prev];
+                } catch (err) {
+                  console.error('Error joining chat:', err);
+                }
+                setActiveChat(targetChat);
+                setChats(prev => {
+                  const exists = prev.some(c => c._id === targetChat._id);
+                  if (exists) {
+                    return prev.map(c => c._id === targetChat._id ? targetChat : c);
+                  }
+                  return [targetChat, ...prev];
                 });
+                if (socketRef.current) {
+                  socketRef.current.emit('join_chat', targetChat._id);
+                }
                 setIsAdminOpen(false);
               }}
               socket={socketRef.current}
@@ -5271,7 +5337,7 @@ function App() {
                           )}
                         </div>
                         <span className="message-time">
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {formatBDMessageTime(msg.createdAt)}
                           {msg.isEdited && (
                             <span className="edited-indicator"> (edited)</span>
                           )}
@@ -5737,7 +5803,15 @@ function App() {
                     }}>
                       {syncPlayHistory && syncPlayHistory.length > 0 ? (
                         [...syncPlayHistory].reverse().map((item, idx) => {
-                          const dateString = new Date(item.addedAt).toLocaleString();
+                          const formattedBDDateTime = item.addedAt ? new Date(item.addedAt).toLocaleString('en-GB', {
+                            timeZone: 'Asia/Dhaka',
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          }) : '';
                           const isCurrentlyPlaying = syncPlayVideoId === item.videoId;
                           
                           return (
@@ -5796,9 +5870,9 @@ function App() {
                                 </div>
                               </div>
                               
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', gap: '8px', flexWrap: 'wrap' }}>
                                 <span>Loaded by: <strong style={{ color: 'var(--primary)' }}>{item.addedByName || 'User'}</strong></span>
-                                <span title={dateString}>{new Date(item.addedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span title={`${formattedBDDateTime} (BD Time)`} style={{ fontSize: '10.5px', opacity: 0.85, whiteSpace: 'nowrap' }}>{formattedBDDateTime}</span>
                               </div>
                               
                               {!isCurrentlyPlaying && (
@@ -5957,17 +6031,65 @@ function App() {
                           onPause={handleVideoPause}
                           onSeeked={handleVideoSeeked}
                           onLoadedMetadata={(e) => {
-                            setVideoDuration(e.target.duration);
+                            if (jellyfinDurationRef.current && jellyfinDurationRef.current > 0) {
+                              setVideoDuration(jellyfinDurationRef.current);
+                            } else {
+                              const dur = e.target.duration;
+                              if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
+                            }
                             handleVideoLoadedMetadata(e);
                           }}
-                          onTimeUpdate={(e) => {
-                            if (!isDraggingTimelineRef.current) {
-                              setVideoCurrentTime(e.target.currentTime);
+                          onDurationChange={(e) => {
+                            if (jellyfinDurationRef.current && jellyfinDurationRef.current > 0) {
+                              setVideoDuration(jellyfinDurationRef.current);
+                            } else {
+                              const dur = e.target.duration;
+                              if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
                             }
                           }}
-                          onClick={handleCustomPlayerPlayPauseToggle}
-                          onDoubleClick={handleVideoDoubleClick}
+                          onTimeUpdate={(e) => {
+                            if (!isDraggingTimelineRef.current && !e.target.seeking) {
+                              setVideoCurrentTime(e.target.currentTime);
+                            }
+                            if (jellyfinDurationRef.current && jellyfinDurationRef.current > 0) {
+                              setVideoDuration(jellyfinDurationRef.current);
+                            } else {
+                              const dur = e.target.duration;
+                              if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
+                            }
+                          }}
+                          onClick={handleVideoAreaClick}
                         />
+
+                        {/* Animated Double-Click Skip Ripple Badge Overlay */}
+                        {skipIndicator && (
+                          <div 
+                            style={{
+                              position: 'absolute',
+                              top: '50%',
+                              left: skipIndicator.side === 'left' ? '25%' : 'auto',
+                              right: skipIndicator.side === 'right' ? '25%' : 'auto',
+                              transform: 'translate(-50%, -50%)',
+                              background: 'rgba(0, 0, 0, 0.75)',
+                              backdropFilter: 'blur(8px)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              color: '#ffffff',
+                              padding: '16px 22px',
+                              borderRadius: '40px',
+                              fontSize: '1.05rem',
+                              fontWeight: 700,
+                              pointerEvents: 'none',
+                              zIndex: 15,
+                              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            {skipIndicator.text}
+                          </div>
+                        )}
 
 
                         {/* Controls bar at the bottom */}
@@ -6004,6 +6126,7 @@ function App() {
                               alignItems: 'center',
                               transition: 'height 0.2s ease'
                             }}
+                            onClick={(e) => e.stopPropagation()}
                             onMouseDown={handleCustomTimelineMouseDown}
                             onTouchStart={handleCustomTimelineTouchStart}
                             onMouseEnter={() => setIsHoveringTimeline(true)}
@@ -6041,33 +6164,33 @@ function App() {
 
                           {/* Control buttons & Sound/Fullscreen */}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', color: '#fff' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               {/* Small Play/Pause */}
                               <button 
                                 type="button" 
-                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                className="syncplay-control-btn"
                                 onClick={handleCustomPlayerPlayPauseToggle}
+                                title={syncPlayIsPlaying ? "Pause" : "Play"}
                               >
                                 {syncPlayIsPlaying ? <Pause size={18} fill="#fff" /> : <Play size={18} fill="#fff" style={{ marginLeft: '2px' }} />}
                               </button>
 
                               {/* Time Indicator */}
-                              <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                              <span style={{ fontSize: '12px', fontFamily: 'monospace', opacity: 0.9 }}>
                                 {formatTimeMMSS(videoCurrentTime)} / {formatTimeMMSS(videoDuration)}
                               </span>
-                            </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                              {/* Volume Controls (white color sound, expands on hover like YouTube) */}
+                              {/* Volume Controls (Beside video time on right side, expanding to right on hover without moving icon) */}
                               <div 
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                                className="syncplay-volume-wrap"
                                 onMouseEnter={() => setIsHoveringCustomVolume(true)}
                                 onMouseLeave={() => setIsHoveringCustomVolume(false)}
                               >
                                 <button 
                                   type="button" 
-                                  style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                  className="syncplay-control-btn"
                                   onClick={handleVolumeMuteToggle}
+                                  title={videoMuted || videoVolume === 0 ? "Unmute" : "Mute"}
                                 >
                                   {videoMuted || videoVolume === 0 ? (
                                     <VolumeX size={18} style={{ color: '#ffffff' }} />
@@ -6082,13 +6205,14 @@ function App() {
                                     width: isHoveringCustomVolume ? '70px' : '0px',
                                     opacity: isHoveringCustomVolume ? 1 : 0,
                                     overflow: 'hidden',
-                                    transition: 'width 0.2s ease, opacity 0.2s ease',
+                                    transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
                                     display: 'flex',
                                     alignItems: 'center'
                                   }}
                                 >
                                   <input 
                                     type="range" 
+                                    className="syncplay-volume-slider"
                                     min="0" 
                                     max="1" 
                                     step="0.05"
@@ -6096,7 +6220,7 @@ function App() {
                                     onChange={handleVolumeChange}
                                     style={{
                                       width: '60px',
-                                      accentColor: '#ffffff', // white color volume slider
+                                      accentColor: '#ffffff',
                                       height: '4px',
                                       borderRadius: '2px',
                                       cursor: 'pointer'
@@ -6104,47 +6228,37 @@ function App() {
                                   />
                                 </div>
                               </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
                               {/* Playback Speed Select */}
                               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                 <select
                                   value={videoPlaybackRate}
                                   onChange={(e) => handleVideoPlaybackRateChange(parseFloat(e.target.value))}
-                                  style={{
-                                    background: 'rgba(255, 255, 255, 0.1)',
-                                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                                    color: '#fff',
-                                    borderRadius: '4px',
-                                    padding: '2px 4px',
-                                    fontSize: '0.75rem',
-                                    cursor: 'pointer',
-                                    outline: 'none',
-                                    height: '24px'
-                                  }}
+                                  className="syncplay-speed-select"
                                   title="Playback Speed"
                                 >
                                   <option value="0.5" style={{ background: '#131520', color: '#fff' }}>0.5x</option>
                                   <option value="0.75" style={{ background: '#131520', color: '#fff' }}>0.75x</option>
-                                  <option value="1" style={{ background: '#131520', color: '#fff' }}>1.0x (Normal)</option>
+                                  <option value="1" style={{ background: '#131520', color: '#fff' }}>1x</option>
                                   <option value="1.25" style={{ background: '#131520', color: '#fff' }}>1.25x</option>
                                   <option value="1.5" style={{ background: '#131520', color: '#fff' }}>1.5x</option>
                                   <option value="1.75" style={{ background: '#131520', color: '#fff' }}>1.75x</option>
-                                  <option value="2" style={{ background: '#131520', color: '#fff' }}>2.0x</option>
+                                  <option value="2" style={{ background: '#131520', color: '#fff' }}>2x</option>
+                                  <option value="2.5" style={{ background: '#131520', color: '#fff' }}>2.5x</option>
+                                  <option value="2.75" style={{ background: '#131520', color: '#fff' }}>2.75x</option>
+                                  <option value="3" style={{ background: '#131520', color: '#fff' }}>3x</option>
                                 </select>
                               </div>
 
                               {/* Toggle Floating Chat Button */}
                               <button 
                                 type="button" 
+                                className="syncplay-control-btn"
                                 style={{ 
-                                  background: 'none', 
-                                  border: 'none', 
-                                  color: showFloatingChat ? 'var(--primary)' : '#fff', 
-                                  cursor: 'pointer', 
-                                  padding: 0, 
-                                  display: 'flex', 
-                                  alignItems: 'center',
-                                  transition: 'color 0.2s ease'
+                                  color: showFloatingChat ? 'var(--primary)' : '#fff'
                                 }}
                                 onClick={() => setShowFloatingChat(prev => !prev)}
                                 title="Toggle Floating Chat"
@@ -6155,14 +6269,10 @@ function App() {
                               {/* Share Frame Button */}
                               <button 
                                 type="button" 
+                                className="syncplay-control-btn"
                                 style={{ 
-                                  background: 'none', 
-                                  border: 'none', 
                                   color: '#fff', 
-                                  cursor: (uploading || isSharingFrame) ? 'not-allowed' : 'pointer', 
-                                  padding: 0, 
-                                  display: 'flex', 
-                                  alignItems: 'center',
+                                  cursor: (uploading || isSharingFrame) ? 'not-allowed' : 'pointer',
                                   opacity: (uploading || isSharingFrame) ? 0.6 : 1
                                 }}
                                 onClick={handleSyncPlayScreenshot}
@@ -6179,8 +6289,9 @@ function App() {
                               {/* Fullscreen Button */}
                               <button 
                                 type="button" 
-                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                className="syncplay-control-btn"
                                 onClick={handleFullscreenToggle}
+                                title="Toggle Fullscreen"
                               >
                                 <Maximize size={18} />
                               </button>
@@ -6199,8 +6310,8 @@ function App() {
                               top: floatingChatPos.top !== null ? `${floatingChatPos.top}px` : '20px',
                               bottom: floatingChatPos.top !== null ? 'auto' : '80px',
                               width: `${floatingChatSize.width}px`,
-                              height: floatingChatSize.height !== null ? `${floatingChatSize.height}px` : 'auto',
-                              maxHeight: 'calc(100% - 100px)',
+                              height: floatingChatSize.height !== null ? `${floatingChatSize.height}px` : '60vh',
+                              maxHeight: 'calc(100% - 30px)',
                               display: 'flex',
                               flexDirection: 'column',
                               background: 'rgba(11, 12, 16, 0.85)',
@@ -6269,6 +6380,10 @@ function App() {
                             >
                               {messages.map((msg, index) => {
                                 const isOwn = msg.sender && msg.sender._id === user?.id;
+                                const isImage = msg.fileUrl && (msg.fileType?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)($|\?)/i.test(msg.fileUrl));
+                                const isAudio = msg.fileUrl && (msg.fileType?.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|webm)($|\?)/i.test(msg.fileUrl));
+                                const isVideo = msg.fileUrl && (msg.fileType?.startsWith('video/') || /\.(mp4|webm|ogg|mov)($|\?)/i.test(msg.fileUrl));
+
                                 return (
                                   <div key={msg._id || index} style={{
                                     display: 'flex',
@@ -6291,9 +6406,77 @@ function App() {
                                       fontSize: '12px',
                                       lineHeight: '1.4',
                                       wordBreak: 'break-word',
-                                      color: '#fff'
+                                      color: '#fff',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '6px'
                                     }}>
-                                      {msg.content || (msg.fileUrl ? '📎 Media shared' : '')}
+                                      {/* Picture (Image) Attachment */}
+                                      {isImage && (
+                                        <div 
+                                          style={{
+                                            borderRadius: '6px',
+                                            overflow: 'hidden',
+                                            maxHeight: '180px',
+                                            cursor: 'pointer',
+                                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                                            background: 'rgba(0, 0, 0, 0.2)'
+                                          }}
+                                          onClick={() => {
+                                            if (document.fullscreenElement && document.exitFullscreen) {
+                                              document.exitFullscreen().catch(err => console.error(err));
+                                            }
+                                            setSyncPlayActive(false);
+                                            setPreviewImageUrl(msg.fileUrl);
+                                            setPreviewImageMsg(msg);
+                                          }}
+                                          title="Click to view image (closes video)"
+                                        >
+                                          <img 
+                                            src={msg.fileUrl} 
+                                            alt={msg.fileName || 'Picture'} 
+                                            style={{ 
+                                              width: '100%', 
+                                              maxHeight: '180px',
+                                              objectFit: 'cover',
+                                              display: 'block'
+                                            }} 
+                                          />
+                                        </div>
+                                      )}
+
+                                      {/* Audio Message */}
+                                      {isAudio && (
+                                        <div style={{ minWidth: '180px' }}>
+                                          <AudioMessagePlayer src={msg.fileUrl} />
+                                        </div>
+                                      )}
+
+                                      {/* Video Attachment */}
+                                      {isVideo && (
+                                        <div style={{ borderRadius: '6px', overflow: 'hidden', maxHeight: '160px' }}>
+                                          <video src={msg.fileUrl} controls style={{ width: '100%', display: 'block' }} />
+                                        </div>
+                                      )}
+
+                                      {/* Generic File Download Link */}
+                                      {msg.fileUrl && !isImage && !isAudio && !isVideo && (
+                                        <a 
+                                          href={msg.fileUrl} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer" 
+                                          style={{ color: '#60a5fa', textDecoration: 'underline', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                          📎 {msg.fileName || 'Download attachment'}
+                                        </a>
+                                      )}
+
+                                      {/* Message Content (Text & Emojis) */}
+                                      {msg.content && (!msg.fileUrl || (msg.content !== '📷 Photo' && msg.content !== '🎤 Voice Message' && !msg.content.startsWith('📎 '))) && (
+                                        <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>
+                                          {msg.content}
+                                        </span>
+                                      )}
                                     </div>
                                     <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
                                       {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -6306,100 +6489,225 @@ function App() {
                             {/* Floating Chat Input form */}
                             <form 
                               onSubmit={handleSendFloatingChatMessage}
+                              className="chat-input-form border-t"
                               style={{
-                                padding: '10px 16px',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                                display: 'flex',
+                                minHeight: 'auto',
+                                height: 'auto',
+                                padding: '10px 12px',
                                 gap: '8px',
-                                background: 'rgba(0, 0, 0, 0.2)'
+                                background: 'rgba(13, 15, 24, 0.85)',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                position: 'relative'
                               }}
                             >
-                              <input 
-                                type="text"
-                                placeholder="Send message..."
-                                value={floatingChatInput}
-                                onChange={(e) => setFloatingChatInput(e.target.value)}
-                                style={{
-                                  flexGrow: 1,
-                                  background: 'rgba(255, 255, 255, 0.05)',
-                                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                                  borderRadius: '6px',
-                                  padding: '6px 10px',
-                                  color: '#fff',
-                                  fontSize: '12px',
-                                  outline: 'none'
-                                }}
-                              />
+
+
+                              <div className="chat-input-wrapper" style={{ flexGrow: 1, minHeight: '38px', borderRadius: '24px' }}>
+                                {/* Emoji Picker Button & Popover Container */}
+                                <div style={{ position: 'relative' }} ref={floatingEmojiPickerRef}>
+                                  <button
+                                    type="button"
+                                    className="emoji-inside-btn"
+                                    onClick={() => setFloatingEmojiPickerOpen(!floatingEmojiPickerOpen)}
+                                    title="Emojis"
+                                    style={{ color: floatingEmojiPickerOpen ? 'var(--primary)' : 'var(--text-secondary)' }}
+                                  >
+                                    <Smile size={20} />
+                                  </button>
+
+                                  {/* Floating Chat Emoji Picker Popover */}
+                                  {floatingEmojiPickerOpen && (
+                                    <div 
+                                      className="glass-panel"
+                                      style={{
+                                        position: 'absolute',
+                                        bottom: '42px',
+                                        left: '0',
+                                        width: '260px',
+                                        maxHeight: '280px',
+                                        background: 'rgba(15, 17, 23, 0.95)',
+                                        backdropFilter: 'blur(16px)',
+                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                        borderRadius: '12px',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                                        zIndex: 100,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        overflow: 'hidden'
+                                      }}
+                                    >
+                                      <div style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                        <input 
+                                          type="text" 
+                                          placeholder="Search emojis..." 
+                                          value={floatingEmojiSearch}
+                                          onChange={(e) => setFloatingEmojiSearch(e.target.value)}
+                                          style={{
+                                            width: '100%',
+                                            background: 'rgba(255, 255, 255, 0.08)',
+                                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                                            borderRadius: '6px',
+                                            padding: '4px 8px',
+                                            color: '#fff',
+                                            fontSize: '11px',
+                                            outline: 'none'
+                                          }}
+                                        />
+                                      </div>
+                                      <div 
+                                        style={{
+                                          flexGrow: 1,
+                                          overflowY: 'auto',
+                                          padding: '8px',
+                                          maxHeight: '210px',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '8px'
+                                        }}
+                                      >
+                                        {getFloatingFilteredEmojis().map(category => (
+                                          <div key={category.name}>
+                                            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontWeight: '600' }}>
+                                              {category.name}
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                                              {category.emojis.map(emoji => (
+                                                <button
+                                                  key={emoji}
+                                                  type="button"
+                                                  tabIndex={-1}
+                                                  onMouseDown={(e) => e.preventDefault()}
+                                                  onClick={(e) => handleFloatingEmojiClick(emoji, e)}
+                                                  style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    fontSize: '16px',
+                                                    cursor: 'pointer',
+                                                    padding: '2px',
+                                                    borderRadius: '4px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    transition: 'transform 0.1s'
+                                                  }}
+                                                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
+                                                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                                >
+                                                  {emoji}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {getFloatingFilteredEmojis().length === 0 && (
+                                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '12px 0' }}>
+                                            No emojis found
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <input 
+                                  ref={floatingChatInputRef}
+                                  type="text"
+                                  placeholder="Say something to Alaap..."
+                                  className="chat-text-input-inside"
+                                  value={floatingChatInput}
+                                  onChange={(e) => setFloatingChatInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      handleSendFloatingChatMessage(e);
+                                    }
+                                  }}
+                                  style={{
+                                    fontSize: '0.9rem',
+                                    padding: '6px 10px 6px 4px'
+                                  }}
+                                />
+                              </div>
+
                               <button 
                                 type="submit"
-                                style={{
-                                  background: 'var(--primary)',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  width: '28px',
-                                  height: '28px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  opacity: floatingChatInput.trim() ? 1 : 0.6
-                                }}
+                                className="send-msg-btn"
                                 disabled={!floatingChatInput.trim()}
+                                style={{
+                                  width: '38px',
+                                  height: '38px',
+                                  flexShrink: 0
+                                }}
                               >
-                                <Send size={14} />
+                                <Send size={18} />
                               </button>
                             </form>
 
-                            {/* Resize Handle (Bottom-Left) */}
+                            {/* Invisible Resize Handle (Bottom Edge) */}
+                            <div 
+                              onPointerDown={(e) => handleResizePointerDown(e, 'bottom')}
+                              onPointerMove={handleResizePointerMove}
+                              onPointerUp={handleResizePointerUp}
+                              style={{
+                                position: 'absolute',
+                                left: '16px',
+                                right: '16px',
+                                bottom: '0',
+                                height: '8px',
+                                cursor: 'ns-resize',
+                                zIndex: 11
+                              }}
+                            />
+
+                            {/* Invisible Resize Handle (Right Edge) */}
+                            <div 
+                              onPointerDown={(e) => handleResizePointerDown(e, 'right')}
+                              onPointerMove={handleResizePointerMove}
+                              onPointerUp={handleResizePointerUp}
+                              style={{
+                                position: 'absolute',
+                                top: '40px',
+                                bottom: '16px',
+                                right: '0',
+                                width: '8px',
+                                cursor: 'ew-resize',
+                                zIndex: 11
+                              }}
+                            />
+
+                            {/* Invisible Resize Handle (Bottom-Left) */}
                             <div 
                               onPointerDown={(e) => handleResizePointerDown(e, 'bottom-left')}
                               onPointerMove={handleResizePointerMove}
                               onPointerUp={handleResizePointerUp}
                               style={{
                                 position: 'absolute',
-                                left: '4px',
-                                bottom: '4px',
-                                width: '12px',
-                                height: '12px',
+                                left: '0',
+                                bottom: '0',
+                                width: '16px',
+                                height: '16px',
                                 cursor: 'nesw-resize',
-                                zIndex: 11,
-                                display: 'flex',
-                                alignItems: 'flex-end',
-                                justifyContent: 'flex-start',
-                                opacity: 0.5
+                                zIndex: 12
                               }}
-                            >
-                              <svg width="8" height="8" viewBox="0 0 8 8" style={{ pointerEvents: 'none' }}>
-                                <line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
-                                <line x1="3" y1="8" x2="8" y2="3" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
-                              </svg>
-                            </div>
+                            />
 
-                            {/* Resize Handle (Bottom-Right) */}
+                            {/* Invisible Resize Handle (Bottom-Right) */}
                             <div 
                               onPointerDown={(e) => handleResizePointerDown(e, 'bottom-right')}
                               onPointerMove={handleResizePointerMove}
                               onPointerUp={handleResizePointerUp}
                               style={{
                                 position: 'absolute',
-                                right: '4px',
-                                bottom: '4px',
-                                width: '12px',
-                                height: '12px',
+                                right: '0',
+                                bottom: '0',
+                                width: '16px',
+                                height: '16px',
                                 cursor: 'nwse-resize',
-                                zIndex: 11,
-                                display: 'flex',
-                                alignItems: 'flex-end',
-                                justifyContent: 'flex-end',
-                                opacity: 0.5
+                                zIndex: 12
                               }}
-                            >
-                              <svg width="8" height="8" viewBox="0 0 8 8" style={{ pointerEvents: 'none' }}>
-                                <line x1="8" y1="8" x2="0" y2="0" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
-                                <line x1="8" y1="5" x2="5" y2="8" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
-                              </svg>
-                            </div>
+                            />
                           </div>
                         )}
                       </div>
@@ -6425,7 +6733,7 @@ function App() {
                         <Tv size={48} style={{ color: 'var(--primary)', marginBottom: '15px', opacity: 0.8 }} />
                         <h4 style={{ margin: '0 0 8px 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>No Video Loaded</h4>
                         <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', margin: '0 0 16px 0', maxWidth: '85%' }}>
-                          Paste a YouTube or video URL below to start playing in sync with your group!
+                          Paste a video URL below to start playing in sync with your group!
                         </p>
                       </div>
                     )}
@@ -6490,20 +6798,67 @@ function App() {
 
                   <div className="sync-play-controls border-t">
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                      <input 
-                        type="text"
-                        placeholder="Paste YouTube video link..."
-                        className="sync-play-url-input flex-grow"
-                        style={{ flexGrow: 1 }}
-                        value={syncPlayInputUrl}
-                        onChange={(e) => setSyncPlayInputUrl(e.target.value)}
-                      />
+                      <div style={{ position: 'relative', flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+                        <input 
+                          type="text"
+                          placeholder="Paste video link..."
+                          className="sync-play-url-input"
+                          style={{ width: '100%', paddingRight: '75px' }}
+                          value={syncPlayInputUrl}
+                          onChange={(e) => setSyncPlayInputUrl(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleChangeVideo(syncPlayInputUrl);
+                          }}
+                        />
+                        <button 
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          style={{
+                            position: 'absolute',
+                            right: '5px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            padding: '5px 14px',
+                            fontSize: '13px',
+                            height: 'calc(100% - 10px)'
+                          }}
+                          onClick={() => handleChangeVideo(syncPlayInputUrl)}
+                        >
+                          Load
+                        </button>
+                      </div>
                       <button 
                         type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleChangeVideo(syncPlayInputUrl)}
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          background: jellyfinStatus.canUseJellyfin ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                          border: jellyfinStatus.canUseJellyfin ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          color: jellyfinStatus.canUseJellyfin ? '#00a4dc' : 'rgba(255, 255, 255, 0.4)',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap',
+                          filter: jellyfinStatus.canUseJellyfin ? 'none' : 'grayscale(100%)',
+                          opacity: jellyfinStatus.canUseJellyfin ? 1 : 0.6,
+                          cursor: jellyfinStatus.canUseJellyfin ? 'pointer' : 'not-allowed'
+                        }}
+                        onClick={() => {
+                          if (jellyfinStatus.canUseJellyfin) {
+                            setIsJellyfinModalOpen(true);
+                          } else {
+                            if (!jellyfinStatus.configured) {
+                              showAlert("Jellyfin server URL is not configured yet in Alaap Control Center.");
+                            } else if (!jellyfinStatus.globalEnabled) {
+                              showAlert("Jellyfin integration is currently disabled by system administrator.");
+                            } else {
+                              showAlert("Jellyfin feature is not enabled for your account. Please contact system administrator.");
+                            }
+                          }
+                        }}
                       >
-                        Load
+                        <Tv size={15} />
+                        <span>Load from Jellyfin</span>
                       </button>
                     </div>
 
@@ -6810,14 +7165,7 @@ function App() {
                         </button>
                       ) : null}
 
-                      <button 
-                        className="btn btn-secondary btn-sm" 
-                        onClick={() => handleDeleteChat(activeChat._id)}
-                        style={{ justifyContent: 'flex-start', color: 'var(--accent-rose)', gap: '8px', fontSize: '0.85rem' }}
-                      >
-                        <Trash2 size={16} />
-                        <span>Delete Chat Box</span>
-                      </button>
+
 
                       {!activeChat.isGroup && (() => {
                         const otherMember = activeChat.members.find(m => m._id !== user?.id);
@@ -6858,7 +7206,7 @@ function App() {
                   <div className="feature-card glass-panel">
                     <Tv size={24} className="feature-icon primary" />
                     <h4>Sync Play</h4>
-                    <p>Watch YouTube videos synchronously with group members in real-time.</p>
+                    <p>Watch videos synchronously with group members in real-time.</p>
                   </div>
                   <div className="feature-card glass-panel">
                     <Users size={24} className="feature-icon secondary" />
@@ -7124,7 +7472,7 @@ function App() {
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="#FF0000" style={{ flexShrink: 0 }}>
                   <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.108C19.518 3.5 12 3.5 12 3.5s-7.518 0-9.388.555A3.003 3.003 0 0 0 .502 6.163C0 8.07 0 12 0 12s0 3.93.502 5.837a3.003 3.003 0 0 0 2.11 2.108C4.482 20.5 12 20.5 12 20.5s7.518 0 9.388-.555a3.003 3.003 0 0 0 2.11-2.108C24 15.93 24 12 24 12s0-3.93-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                 </svg>
-                <span>Open with YouTube</span>
+                <span>Open with Platform</span>
               </button>
             </div>
           </>
@@ -7747,6 +8095,16 @@ function App() {
           </div>
         ))}
       </div>
+
+      {/* Jellyfin Picker Modal for SyncPlay */}
+      <JellyfinModal 
+        token={token}
+        isOpen={isJellyfinModalOpen}
+        onClose={() => setIsJellyfinModalOpen(false)}
+        onLoadVideo={(streamUrl, videoTitle, durationSec) => {
+          handleChangeVideo(streamUrl, durationSec);
+        }}
+      />
     </div>
   );
 }
@@ -7904,13 +8262,78 @@ function AuthScreen({ setToken, setUser, systemSettings, fetchSystemSignupSettin
 // -------------------------------------------------------------
 // Admin Dashboard Component Panel
 // -------------------------------------------------------------
-function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenChat, socket }) {
+function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenChat, socket, onUpdateJellyfinStatus }) {
   const alert = (message) => {
     showAlert(message);
   };
   const [stats, setStats] = useState({ totalUsers: 0, totalChats: 0, totalMessages: 0 });
-  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [] });
+  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [], jellyfinUrl: '', jellyfinUsername: '', jellyfinPassword: '', jellyfinEnabled: false });
   const [users, setUsers] = useState([]);
+
+  const [adminJellyfinUrlInput, setAdminJellyfinUrlInput] = useState('');
+  const [adminJellyfinUsernameInput, setAdminJellyfinUsernameInput] = useState('');
+  const [adminJellyfinPasswordInput, setAdminJellyfinPasswordInput] = useState('');
+  const [adminJellyfinEnabledInput, setAdminJellyfinEnabledInput] = useState(false);
+  const [adminJellyfinSaveSuccess, setAdminJellyfinSaveSuccess] = useState('');
+  const [adminJellyfinSaveError, setAdminJellyfinSaveError] = useState('');
+  const [adminJellyfinTesting, setAdminJellyfinTesting] = useState(false);
+
+  const handleToggleGlobalJellyfin = async () => {
+    const nextState = !adminJellyfinEnabledInput;
+    setAdminJellyfinEnabledInput(nextState);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jellyfinEnabled: nextState
+        })
+      });
+      if (response.ok) {
+        setSettings(prev => ({ ...prev, jellyfinEnabled: nextState }));
+        if (typeof onUpdateJellyfinStatus === 'function') {
+          onUpdateJellyfinStatus();
+        }
+      } else {
+        setAdminJellyfinEnabledInput(!nextState);
+        showAlert('Failed to update global Jellyfin setting.');
+      }
+    } catch (err) {
+      console.error(err);
+      setAdminJellyfinEnabledInput(!nextState);
+      showAlert('Error connecting to server.');
+    }
+  };
+
+  const handleToggleUserJellyfin = async (targetUser) => {
+    const nextEnabled = !targetUser.jellyfinEnabled;
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: nextEnabled } : u));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-jellyfin`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      if (response.ok) {
+        fetchAdminData();
+        if (typeof onUpdateJellyfinStatus === 'function') onUpdateJellyfinStatus();
+      } else {
+        const data = await response.json();
+        setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: targetUser.jellyfinEnabled } : u));
+        showAlert(data.error || 'Failed to toggle Jellyfin permission.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: targetUser.jellyfinEnabled } : u));
+      showAlert('Error connecting to server.');
+    }
+  };
   
   const [activeTab, setActiveTab] = useState('system'); // 'system', 'groups', 'conversations'
   const [groups, setGroups] = useState([]);
@@ -8185,11 +8608,88 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
         setStats(data.stats);
         setSettings(data.settings);
         setUsers(data.users);
+        setAdminJellyfinUrlInput(data.settings?.jellyfinUrl || '');
+        setAdminJellyfinUsernameInput(data.settings?.jellyfinUsername || '');
+        setAdminJellyfinPasswordInput(data.settings?.jellyfinPassword ? '********' : '');
+        setAdminJellyfinEnabledInput(Boolean(data.settings?.jellyfinEnabled));
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveAdminJellyfinConfig = async (e) => {
+    e.preventDefault();
+    setAdminJellyfinSaveSuccess('');
+    setAdminJellyfinSaveError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jellyfinUrl: adminJellyfinUrlInput,
+          jellyfinUsername: adminJellyfinUsernameInput,
+          jellyfinPassword: adminJellyfinPasswordInput,
+          jellyfinEnabled: adminJellyfinEnabledInput
+        })
+      });
+
+      if (response.ok) {
+        setAdminJellyfinSaveSuccess('Jellyfin settings saved successfully!');
+        setSettings(prev => ({
+          ...prev,
+          jellyfinUrl: adminJellyfinUrlInput,
+          jellyfinUsername: adminJellyfinUsernameInput,
+          jellyfinPassword: adminJellyfinPasswordInput,
+          jellyfinEnabled: adminJellyfinEnabledInput
+        }));
+        if (typeof onUpdateJellyfinStatus === 'function') {
+          onUpdateJellyfinStatus();
+        }
+        setTimeout(() => setAdminJellyfinSaveSuccess(''), 5000);
+      } else {
+        const errData = await response.json();
+        setAdminJellyfinSaveError(errData.error || 'Failed to save Jellyfin settings.');
+      }
+    } catch (err) {
+      console.error('Error saving Jellyfin config:', err);
+      setAdminJellyfinSaveError(err.message || 'Error connecting to server.');
+    }
+  };
+
+  const handleTestAdminJellyfinConfig = async () => {
+    setAdminJellyfinSaveSuccess('');
+    setAdminJellyfinSaveError('');
+    setAdminJellyfinTesting(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/jellyfin/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jellyfinUrl: adminJellyfinUrlInput,
+          jellyfinUsername: adminJellyfinUsernameInput,
+          jellyfinPassword: adminJellyfinPasswordInput
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setAdminJellyfinSaveSuccess(data.message);
+      } else {
+        setAdminJellyfinSaveError(data.error || 'Failed to connect to Jellyfin server.');
+      }
+    } catch (err) {
+      console.error(err);
+      setAdminJellyfinSaveError('Network error connecting to Jellyfin server.');
+    } finally {
+      setAdminJellyfinTesting(false);
     }
   };
 
@@ -8470,6 +8970,104 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
             )}
           </div>
 
+          {/* Jellyfin Integration Config */}
+          <div className="admin-card glass-panel config-card mt-6" style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <JellyfinLogo size={22} />
+              <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Configure your self-hosted Jellyfin media server and enable or disable the feature globally across Alaap.
+            </p>
+
+            {adminJellyfinSaveSuccess && <div className="admin-alert success">{adminJellyfinSaveSuccess}</div>}
+            {adminJellyfinSaveError && <div className="admin-alert error">{adminJellyfinSaveError}</div>}
+
+            {user?.role === 'Root' && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(0, 164, 220, 0.08)', borderRadius: '10px', border: '1px solid rgba(0, 164, 220, 0.2)', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#00a4dc' }}>Jellyfin Feature (Global Switch)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Master switch. Disabled by default for all users.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleGlobalJellyfin}
+                  style={{
+                    padding: '6px 14px',
+                    fontWeight: '600',
+                    fontSize: '12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: adminJellyfinEnabledInput ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    border: adminJellyfinEnabledInput ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
+                    color: adminJellyfinEnabledInput ? '#4ade80' : '#f87171'
+                  }}
+                >
+                  {adminJellyfinEnabledInput ? '✓ Enabled' : '✕ Disabled'}
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAdminJellyfinConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                  Jellyfin Server Address (URL)
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. http://192.168.1.50:8096 or https://jellyfin.example.com"
+                  className="chat-text-input" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px' }}
+                  value={adminJellyfinUrlInput}
+                  onChange={(e) => setAdminJellyfinUrlInput(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                  Jellyfin Account Username
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="Enter Jellyfin account username..."
+                  className="chat-text-input" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px' }}
+                  value={adminJellyfinUsernameInput}
+                  onChange={(e) => setAdminJellyfinUsernameInput(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                  Jellyfin Account Password
+                </label>
+                <input 
+                  type="password" 
+                  placeholder="Enter Jellyfin account password..."
+                  className="chat-text-input" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px' }}
+                  value={adminJellyfinPasswordInput}
+                  onChange={(e) => setAdminJellyfinPasswordInput(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+                <button 
+                  type="button" 
+                  onClick={handleTestAdminJellyfinConfig}
+                  disabled={adminJellyfinTesting}
+                  className="btn btn-secondary btn-sm" 
+                  style={{ fontWeight: '600', padding: '8px 16px' }}
+                >
+                  {adminJellyfinTesting ? 'Testing...' : 'Test Connection 🔍'}
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#00a4dc', borderColor: '#00a4dc', color: '#fff', fontWeight: '600', padding: '8px 16px' }}>
+                  Save Jellyfin Configuration
+                </button>
+              </div>
+            </form>
+          </div>
+
           {/* Quick Create User Form */}
           <div className="admin-card glass-panel create-user-card">
             <h3>Provision User Account</h3>
@@ -8527,6 +9125,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                     <th>Username</th>
                     <th>Unique ID</th>
                     <th>Role</th>
+                    <th>Jellyfin Access</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -8547,6 +9146,21 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                         </span>
                       </td>
                       <td>
+                        {u.role === 'Root' || u.isAdmin ? (
+                          <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            Root (Always On)
+                          </span>
+                        ) : u.jellyfinEnabled ? (
+                          <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
+                            Enabled
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            Disabled
+                          </span>
+                        )}
+                      </td>
+                      <td>
                         <span className={`status-text ${u.status}`}>
                           {u.status === 'online' ? '● Online' : '○ Offline'}
                         </span>
@@ -8555,6 +9169,28 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                         {new Date(u.createdAt).toLocaleDateString()}
                       </td>
                       <td style={{ display: 'flex', gap: '8px' }}>
+                        {user?.role === 'Root' && u.role !== 'Root' && !u.isAdmin && (
+                          <button 
+                            type="button"
+                            className="icon-btn" 
+                            onClick={() => handleToggleUserJellyfin(u)}
+                            title={u.jellyfinEnabled ? "Disable Jellyfin access for this user" : "Enable Jellyfin access for this user"}
+                            style={{ 
+                              width: '32px', 
+                              height: '32px', 
+                              padding: '0', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              borderRadius: 'var(--radius-md)',
+                              background: u.jellyfinEnabled ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                              border: u.jellyfinEnabled ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid var(--glass-border)',
+                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)'
+                            }}
+                          >
+                            <Tv size={15} />
+                          </button>
+                        )}
                         <button 
                           className="icon-btn" 
                           onClick={() => openEditUserModal(u)}
@@ -8774,7 +9410,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                             {msg.sender?.username || 'Unknown'}
                           </span>
                           <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatBDMessageTime(msg.createdAt)}
                           </span>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

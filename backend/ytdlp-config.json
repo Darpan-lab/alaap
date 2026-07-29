@@ -1,0 +1,68 @@
+{
+  "ytdlpBinary": "yt-dlp",
+  "cookiesFile": "yt-dlp-cookies.txt",
+  "defaultArgs": [
+    "-f",
+    "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
+    "--remux-video",
+    "mp4",
+    "--write-info-json"
+  ],
+  "rules": [
+    {
+      "name": "YouTube",
+      "domains": [
+        "youtube.com",
+        "youtu.be",
+        "www.youtube.com",
+        "m.youtube.com"
+      ],
+      "patterns": [
+        "^[a-zA-Z0-9_-]{11}$"
+      ],
+      "args": [
+        "--js-runtime",
+        "node",
+        "--cookies",
+        "{cookies_file}"
+      ]
+    },
+    {
+      "name": "Vimeo",
+      "domains": [
+        "vimeo.com"
+      ],
+      "args": []
+    },
+    {
+      "name": "TikTok",
+      "domains": [
+        "tiktok.com"
+      ],
+      "args": []
+    },
+    {
+      "name": "Facebook",
+      "domains": [
+        "facebook.com",
+        "fb.watch"
+      ],
+      "args": []
+    },
+    {
+      "name": "Dailymotion",
+      "domains": [
+        "dailymotion.com",
+        "dai.ly"
+      ],
+      "args": []
+    },
+    {
+      "name": "Default Fallback",
+      "domains": [
+        "*"
+      ],
+      "args": []
+    }
+  ]
+}

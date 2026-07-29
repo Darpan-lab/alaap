@@ -1,23 +1,38 @@
 import React, { useState } from 'react';
 import { 
   Shield, Settings, Bell, LogOut, Search, X, Plus, 
-  MessageSquare, Users, ChevronRight, User
+  MessageSquare, Users, ChevronRight, User, MoreVertical, Trash2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useDialog } from '../../context/DialogContext';
 import { API_BASE_URL } from '../../config';
+import { formatBDMessageTime, formatBDTimeOnly } from '../../utils/dateUtils';
 
 export function Sidebar({ 
   width, 
-  onResizeMouseDown, 
   setIsGroupModalOpen, 
   isAdminOpen, 
   setIsAdminOpen,
   isSettingsOpen,
   setIsSettingsOpen,
-  isSidebarHidden
+  isSidebarHidden,
+  onDeleteChat
 }) {
+  const [cardMenuOpenId, setCardMenuOpenId] = useState(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = () => {
+      if (cardMenuOpenId !== null) {
+        setCardMenuOpenId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [cardMenuOpenId]);
+
   const { user, token, logout } = useAuth();
   const { 
     chats, 
@@ -341,18 +356,57 @@ export function Sidebar({
                   <div className="chat-item-info">
                     <div className="chat-item-header">
                       <span className="chat-name">{details.name}</span>
-                      {chat.latestMessage && (
-                        <span className="chat-time">
-                          {new Date(chat.latestMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+                        {chat.latestMessage && (
+                          <span className="chat-time">
+                            {formatBDTimeOnly(chat.latestMessage.createdAt)}
+                          </span>
+                        )}
+                        <button 
+                          type="button"
+                          className="chat-card-menu-btn"
+                          title="Chat Options"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
+                          }}
+                        >
+                          <MoreVertical size={14} />
+                        </button>
+
+                        {cardMenuOpenId === chat._id && (
+                          <div 
+                            className="chat-card-dropdown"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button 
+                              type="button" 
+                              className="dropdown-item danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCardMenuOpenId(null);
+                                if (onDeleteChat) {
+                                  onDeleteChat(chat._id);
+                                }
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              <span>Delete Chat Box</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="chat-item-preview">
                       {typerNames.length > 0 ? (
                         <span className="typing-preview">{typerNames.join(', ')} typing...</span>
                       ) : chat.latestMessage ? (
                         <span className="last-msg-text">
-                          {!chat.latestMessage.sender ? 'Deleted User: ' : (chat.latestMessage.sender._id === user?.id || chat.latestMessage.sender._id === user?._id ? 'You: ' : `${chat.latestMessage.sender.username}: `)}
+                          {chat.latestMessage.sender && typeof chat.latestMessage.sender === 'object' ? (
+                            (chat.latestMessage.sender._id === user?.id || chat.latestMessage.sender._id === user?._id) ? 'You: ' : `${chat.latestMessage.sender.username}: `
+                          ) : (
+                            chat.latestMessage.sender === null ? 'Deleted User: ' : ''
+                          )}
                           {chat.latestMessage.fileUrl ? 
                             (chat.latestMessage.fileType?.startsWith('audio/') ? `🎤 Voice Message` : `📎 ${chat.latestMessage.fileName}`) 
                             : chat.latestMessage.content}
@@ -370,13 +424,6 @@ export function Sidebar({
             })
           )}
         </div>
-      </div>
-      {!isSidebarHidden && (
-        <div 
-          className="resize-handle" 
-          onMouseDown={onResizeMouseDown}
-        />
-      )}
     </>
   );
 }

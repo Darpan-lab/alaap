@@ -360,18 +360,30 @@ export function SyncPlayPanel({
           </div>
 
           <div className="sync-play-controls border-t">
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <div style={{ position: 'relative', width: '100%', marginBottom: '16px', display: 'flex', alignItems: 'center' }}>
               <input 
                 type="text"
-                placeholder="Paste YouTube video link..."
-                className="sync-play-url-input flex-grow"
-                style={{ flexGrow: 1 }}
+                placeholder="Paste video link..."
+                className="sync-play-url-input"
+                style={{ width: '100%', paddingRight: '75px' }}
                 value={syncPlayInputUrl}
                 onChange={(e) => setSyncPlayInputUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleChangeVideo(syncPlayInputUrl);
+                }}
               />
               <button 
                 type="button"
                 className="btn btn-primary btn-sm"
+                style={{
+                  position: 'absolute',
+                  right: '5px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  padding: '5px 14px',
+                  fontSize: '13px',
+                  height: 'calc(100% - 10px)'
+                }}
                 onClick={() => handleChangeVideo(syncPlayInputUrl)}
               >
                 Load

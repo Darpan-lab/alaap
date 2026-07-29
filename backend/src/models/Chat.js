@@ -39,7 +39,32 @@ const chatSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
+    videoTitle: {
+      type: String,
+      default: ''
+    },
+    videoUrl: {
+      type: String,
+      default: ''
+    },
+    downloadStatus: {
+      type: String,
+      enum: ['idle', 'downloading', 'completed', 'failed'],
+      default: 'idle'
+    },
+    downloadProgress: {
+      type: Number,
+      default: 0
+    },
+    downloadError: {
+      type: String,
+      default: ''
+    },
     currentTime: {
+      type: Number,
+      default: 0
+    },
+    durationSec: {
       type: Number,
       default: 0
     },
@@ -53,9 +78,43 @@ const chatSchema = new mongoose.Schema({
     },
     lastUpdatedAt: {
       type: Date
-    }
+    },
+    history: [{
+      videoId: {
+        type: String,
+        required: true
+      },
+      videoTitle: {
+        type: String,
+        default: ''
+      },
+      videoUrl: {
+        type: String,
+        default: ''
+      },
+      durationSec: {
+        type: Number,
+        default: 0
+      },
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedByName: {
+        type: String,
+        default: ''
+      },
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
   },
   hiddenBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  mutedBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],

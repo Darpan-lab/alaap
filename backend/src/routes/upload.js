@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import https from 'https';
 import { auth } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -47,6 +48,30 @@ router.post('/', auth, upload.single('file'), (req, res) => {
     console.error('File Upload Error:', error);
     res.status(500).json({ error: 'Internal server error during file upload.' });
   }
+});
+
+// GET YouTube Thumbnail Proxy to bypass CORS policies
+router.get('/proxy-thumb', (req, res) => {
+  const { videoId } = req.query;
+  if (!videoId) {
+    return res.status(400).json({ error: 'videoId query parameter is required.' });
+  }
+
+  const url = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+
+  https.get(url, (response) => {
+    if (response.statusCode !== 200) {
+      return res.status(response.statusCode).json({ error: 'Failed to fetch thumbnail from YouTube.' });
+    }
+
+    res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    response.pipe(res);
+  }).on('error', (err) => {
+    console.error('YT Proxy Error:', err);
+    res.status(500).json({ error: 'Error proxying YouTube thumbnail.' });
+  });
 });
 
 export default router;

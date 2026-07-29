@@ -59,6 +59,35 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// Join a chat/group (e.g. for Root user or admin joining a group from Control Center)
+router.post('/:chatId/join', auth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found.' });
+    }
+
+    if (!chat.members.map(m => m.toString()).includes(req.user._id.toString())) {
+      chat.members.push(req.user._id);
+      await chat.save();
+    }
+
+    const fullChat = await Chat.findById(chatId)
+      .populate('members', 'username profilePic status isAdmin blockedUsers')
+      .populate('creator', 'username')
+      .populate({
+        path: 'latestMessage',
+        populate: { path: 'sender', select: 'username profilePic' }
+      });
+
+    return res.json({ chat: fullChat });
+  } catch (error) {
+    console.error('Join Chat Error:', error);
+    return res.status(500).json({ error: 'Failed to join chat.' });
+  }
+});
+
 // Create or Access a Chat (Direct Message or Group Chat)
 router.post('/', auth, async (req, res) => {
   try {
@@ -424,12 +453,30 @@ router.delete('/:chatId/history', auth, async (req, res) => {
       // Clear latestMessage reference and clearedHistory in Chat
       chat.latestMessage = null;
       chat.clearedHistory = [];
+      if (chat.syncPlay) {
+        chat.syncPlay.history = [];
+      }
       await chat.save();
 
-      // Notify all members via socket to clear their UI messages
+      // Notify all members via socket to clear their UI messages and SyncPlay history
       if (req.io) {
         chat.members.forEach(memberId => {
           req.io.to(`user_${memberId.toString()}`).emit('chat_history_cleared', { chatId });
+        });
+        req.io.to(chatId).emit('sync_play_broadcast', {
+          chatId,
+          videoId: chat.syncPlay?.videoId || '',
+          videoTitle: chat.syncPlay?.videoTitle || '',
+          videoUrl: chat.syncPlay?.videoUrl || '',
+          downloadStatus: chat.syncPlay?.downloadStatus || 'idle',
+          downloadProgress: chat.syncPlay?.downloadProgress || 0,
+          downloadError: chat.syncPlay?.downloadError || '',
+          action: 'clear_history',
+          currentTime: chat.syncPlay?.currentTime || 0,
+          isPlaying: chat.syncPlay?.isPlaying || false,
+          senderId: req.user._id,
+          senderName: req.user.username,
+          history: []
         });
       }
       return res.json({ message: 'Chat history deleted permanently from database.' });
@@ -450,11 +497,29 @@ router.delete('/:chatId/history', auth, async (req, res) => {
         clearedAt: new Date()
       });
     }
+    if (chat.syncPlay) {
+      chat.syncPlay.history = [];
+    }
     await chat.save();
 
     // Notify only the clearing user via socket to clear their UI messages
     if (req.io) {
       req.io.to(`user_${req.user._id.toString()}`).emit('chat_history_cleared', { chatId });
+      req.io.to(chatId).emit('sync_play_broadcast', {
+        chatId,
+        videoId: chat.syncPlay?.videoId || '',
+        videoTitle: chat.syncPlay?.videoTitle || '',
+        videoUrl: chat.syncPlay?.videoUrl || '',
+        downloadStatus: chat.syncPlay?.downloadStatus || 'idle',
+        downloadProgress: chat.syncPlay?.downloadProgress || 0,
+        downloadError: chat.syncPlay?.downloadError || '',
+        action: 'clear_history',
+        currentTime: chat.syncPlay?.currentTime || 0,
+        isPlaying: chat.syncPlay?.isPlaying || false,
+        senderId: req.user._id,
+        senderName: req.user.username,
+        history: []
+      });
     }
 
     res.json({ message: 'Chat history cleared successfully.' });
@@ -586,6 +651,73 @@ router.delete('/:chatId', auth, async (req, res) => {
   } catch (error) {
     console.error('Delete Chat Error:', error);
     res.status(500).json({ error: 'Internal server error while deleting chat.' });
+  }
+});
+
+// Mute a chat
+router.post('/:chatId/mute', auth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found.' });
+    }
+    if (!chat.members.includes(req.user._id.toString()) && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied. You are not a member of this chat.' });
+    }
+    if (!chat.mutedBy) {
+      chat.mutedBy = [];
+    }
+    if (!chat.mutedBy.includes(req.user._id.toString())) {
+      chat.mutedBy.push(req.user._id.toString());
+      await chat.save();
+    }
+
+    const updatedChat = await Chat.findById(chatId)
+      .populate('members', 'username profilePic status isAdmin blockedUsers')
+      .populate('creator', 'username');
+
+    // Notify member via socket to update mute state
+    if (req.io) {
+      req.io.to(`user_${req.user._id.toString()}`).emit('chat_members_updated', updatedChat);
+    }
+
+    return res.json({ message: 'Chat muted successfully.', isMuted: true, chat: updatedChat });
+  } catch (error) {
+    console.error('Mute Chat Error:', error);
+    res.status(500).json({ error: 'Internal server error while muting chat.' });
+  }
+});
+
+// Unmute a chat
+router.post('/:chatId/unmute', auth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found.' });
+    }
+    if (!chat.members.includes(req.user._id.toString()) && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied. You are not a member of this chat.' });
+    }
+    if (chat.mutedBy) {
+      chat.mutedBy = chat.mutedBy.filter(id => id.toString() !== req.user._id.toString());
+      await chat.save();
+    }
+
+    const updatedChat = await Chat.findById(chatId)
+      .populate('members', 'username profilePic status isAdmin blockedUsers')
+      .populate('creator', 'username');
+
+    // Notify member via socket to update mute state
+    if (req.io) {
+      req.io.to(`user_${req.user._id.toString()}`).emit('chat_members_updated', updatedChat);
+    }
+
+    return res.json({ message: 'Chat unmuted successfully.', isMuted: false, chat: updatedChat });
+  } catch (error) {
+    console.error('Unmute Chat Error:', error);
+    res.status(500).json({ error: 'Internal server error while unmuting chat.' });
   }
 });
 

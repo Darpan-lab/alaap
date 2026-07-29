@@ -5,11 +5,17 @@ import Chat from '../models/Chat.js';
 import Message from '../models/Message.js';
 import Setting from '../models/Setting.js';
 import { auth, adminAuth } from '../middleware/auth.js';
+import { clearJellyfinCache } from './jellyfin.js';
 
 const router = express.Router();
 
 // Helper to get or create setting
-const getOrCreateSetting = async (key, defaultValue) => {
+export const getSetting = async (key, defaultValue) => {
+  let setting = await Setting.findOne({ key });
+  return setting ? setting.value : defaultValue;
+};
+
+export const getOrCreateSetting = async (key, defaultValue) => {
   let setting = await Setting.findOne({ key });
   if (!setting) {
     setting = new Setting({ key, value: defaultValue });
@@ -19,7 +25,7 @@ const getOrCreateSetting = async (key, defaultValue) => {
 };
 
 // Update a setting
-const updateSetting = async (key, value) => {
+export const updateSetting = async (key, value) => {
   await Setting.findOneAndUpdate(
     { key },
     { value },
@@ -33,6 +39,11 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
     const signupEnabled = await getOrCreateSetting('signupEnabled', true);
     const inviteOnlyEnabled = await getOrCreateSetting('inviteOnlyEnabled', false);
     const inviteCodes = await getOrCreateSetting('inviteCodes', []);
+    const jellyfinUrl = await getOrCreateSetting('jellyfinUrl', '');
+    const jellyfinUsername = await getOrCreateSetting('jellyfinUsername', '');
+    const jellyfinPassword = await getOrCreateSetting('jellyfinPassword', '');
+    const jellyfinEnabledSetting = await getOrCreateSetting('jellyfinEnabled', 'true');
+    const jellyfinEnabled = String(jellyfinEnabledSetting) === 'true' || jellyfinEnabledSetting === true;
 
     const userCount = await User.countDocuments();
     const chatCount = await Chat.countDocuments();
@@ -40,7 +51,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
 
     // Get all users for admin list
     const users = await User.find({})
-      .select('username isAdmin role status profilePic createdAt')
+      .select('username isAdmin role status profilePic jellyfinEnabled createdAt')
       .sort({ createdAt: -1 });
 
     const mappedUsers = users.map(u => {
@@ -48,6 +59,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
       if (uObj.isAdmin && (!uObj.role || uObj.role === 'Regular')) {
         uObj.role = 'Root';
       }
+      uObj.jellyfinEnabled = !!uObj.jellyfinEnabled;
       return uObj;
     });
 
@@ -60,7 +72,11 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
       settings: {
         signupEnabled,
         inviteOnlyEnabled,
-        inviteCodes
+        inviteCodes,
+        jellyfinUrl,
+        jellyfinUsername,
+        jellyfinPassword: jellyfinPassword ? '********' : '',
+        jellyfinEnabled
       },
       users: mappedUsers
     });
@@ -70,16 +86,33 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Update registration settings (Toggle Signup / Toggle Invite Only)
+// Update registration settings & Jellyfin settings
 router.post('/settings', auth, adminAuth, async (req, res) => {
   try {
-    const { signupEnabled, inviteOnlyEnabled } = req.body;
+    const { signupEnabled, inviteOnlyEnabled, jellyfinUrl, jellyfinUsername, jellyfinPassword, jellyfinEnabled } = req.body;
 
     if (signupEnabled !== undefined) {
       await updateSetting('signupEnabled', signupEnabled);
     }
     if (inviteOnlyEnabled !== undefined) {
       await updateSetting('inviteOnlyEnabled', inviteOnlyEnabled);
+    }
+    if (jellyfinUrl !== undefined) {
+      await updateSetting('jellyfinUrl', typeof jellyfinUrl === 'string' ? jellyfinUrl.trim() : '');
+    }
+    if (jellyfinUsername !== undefined) {
+      await updateSetting('jellyfinUsername', typeof jellyfinUsername === 'string' ? jellyfinUsername.trim() : '');
+    }
+    if (jellyfinPassword !== undefined && jellyfinPassword !== '********') {
+      await updateSetting('jellyfinPassword', typeof jellyfinPassword === 'string' ? jellyfinPassword.trim() : '');
+    }
+    if (jellyfinEnabled !== undefined) {
+      await updateSetting('jellyfinEnabled', jellyfinEnabled ? 'true' : 'false');
+      if (req.io) req.io.emit('jellyfin_status_updated');
+    }
+    if (jellyfinUrl !== undefined || jellyfinUsername !== undefined || jellyfinPassword !== undefined) {
+      clearJellyfinCache();
+      if (req.io) req.io.emit('jellyfin_status_updated');
     }
 
     res.json({ message: 'Settings updated successfully.' });
@@ -126,6 +159,35 @@ router.delete('/invite-codes/:code', auth, adminAuth, async (req, res) => {
   } catch (error) {
     console.error('Invite Code Deletion Error:', error);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// Toggle User Jellyfin Permission (Root only)
+router.put('/users/:userId/toggle-jellyfin', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can toggle Jellyfin permissions for users.' });
+    }
+    const { userId } = req.params;
+    const { enabled } = req.body;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    user.jellyfinEnabled = enabled !== undefined ? Boolean(enabled) : !user.jellyfinEnabled;
+    await user.save();
+    if (req.io) {
+      req.io.emit('jellyfin_status_updated');
+    }
+    res.json({
+      success: true,
+      message: `Jellyfin access ${user.jellyfinEnabled ? 'enabled' : 'disabled'} for ${user.username}.`,
+      jellyfinEnabled: user.jellyfinEnabled
+    });
+  } catch (error) {
+    console.error('Toggle User Jellyfin Error:', error);
+    res.status(500).json({ error: 'Failed to update user Jellyfin permission.' });
   }
 });
 
@@ -389,6 +451,10 @@ router.get('/groups', auth, adminAuth, async (req, res) => {
     const groups = await Chat.find({ isGroup: true })
       .populate('members', 'username profilePic status isAdmin')
       .populate('creator', 'username')
+      .populate({
+        path: 'latestMessage',
+        populate: { path: 'sender', select: 'username profilePic' }
+      })
       .sort({ createdAt: -1 });
 
     res.json(groups);

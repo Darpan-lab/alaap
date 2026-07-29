@@ -11,31 +11,77 @@ export const AudioMessagePlayer = ({ src }) => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleLoadedMetadata = () => {
+    let isCancelled = false;
+
+    const checkAndSetDuration = () => {
+      if (!audio) return;
+
       if (audio.duration && isFinite(audio.duration)) {
         setDuration(audio.duration);
+      } else if (audio.duration === Infinity || (audio.readyState >= 1 && (!audio.duration || isNaN(audio.duration)))) {
+        // Fix for WebM MediaRecorder recorded audio where browser reports Infinity duration
+        const calculateWebMDuration = () => {
+          if (isCancelled) return;
+          const onSeek = () => {
+            audio.removeEventListener('timeupdate', onSeek);
+            audio.removeEventListener('seeked', onSeek);
+            if (!isCancelled && audio.currentTime > 0) {
+              setDuration(audio.currentTime);
+            }
+            if (!isPlaying) {
+              audio.currentTime = 0;
+            }
+          };
+
+          audio.addEventListener('timeupdate', onSeek, { once: true });
+          audio.addEventListener('seeked', onSeek, { once: true });
+          audio.currentTime = 1e101;
+        };
+
+        calculateWebMDuration();
       }
     };
-    
-    if (audio.readyState >= 1 && audio.duration) {
-      setDuration(audio.duration);
-    }
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+      if (audio.currentTime > 0) {
+        setDuration(prev => Math.max(prev, audio.currentTime));
+      }
+    };
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+      if (audio.duration && isFinite(audio.duration)) {
+        setDuration(audio.duration);
+      } else if (audio.currentTime > 0) {
+        setDuration(prev => Math.max(prev, audio.currentTime));
+      }
+    };
 
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
+    audio.addEventListener('ended', handleEnded);
     audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('durationchange', handleLoadedMetadata);
+    audio.addEventListener('loadedmetadata', checkAndSetDuration);
+    audio.addEventListener('durationchange', checkAndSetDuration);
+    audio.addEventListener('canplaythrough', checkAndSetDuration);
+
+    if (audio.readyState >= 1) {
+      checkAndSetDuration();
+    }
 
     return () => {
+      isCancelled = true;
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('durationchange', handleLoadedMetadata);
+      audio.removeEventListener('loadedmetadata', checkAndSetDuration);
+      audio.removeEventListener('durationchange', checkAndSetDuration);
+      audio.removeEventListener('canplaythrough', checkAndSetDuration);
     };
   }, [src]);
 
@@ -56,13 +102,13 @@ export const AudioMessagePlayer = ({ src }) => {
   };
 
   const formatTime = (secs) => {
-    if (isNaN(secs) || !isFinite(secs)) return '0:00';
+    if (isNaN(secs) || !isFinite(secs) || secs < 0) return '0:00';
     const mins = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${mins}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   return (
     <div className="custom-audio-player">
@@ -83,6 +129,7 @@ export const AudioMessagePlayer = ({ src }) => {
             type="range" 
             min="0" 
             max={duration || 100} 
+            step="0.1"
             value={currentTime} 
             onChange={handleSliderChange}
             className="audio-progress-slider"

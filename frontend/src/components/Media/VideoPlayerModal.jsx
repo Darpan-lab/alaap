@@ -13,6 +13,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
   const [showControls, setShowControls] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isHoveringVolume, setIsHoveringVolume] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   const controlsTimeoutRef = useRef(null);
   
@@ -91,7 +92,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
   };
 
   const handleTimeUpdate = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || isDragging) return;
     setCurrentTime(videoRef.current.currentTime);
   };
 
@@ -101,10 +102,19 @@ export const VideoPlayerModal = ({ video, onClose }) => {
   };
 
   const handleSliderChange = (e) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+  };
+
+  const handleSliderMouseDown = () => {
+    setIsDragging(true);
+  };
+
+  const handleSliderMouseUp = (e) => {
+    setIsDragging(false);
     if (!videoRef.current) return;
     const time = parseFloat(e.target.value);
     videoRef.current.currentTime = time;
-    setCurrentTime(time);
   };
 
   const handleVolumeChange = (e) => {
@@ -345,6 +355,10 @@ export const VideoPlayerModal = ({ video, onClose }) => {
               max={duration || 100} 
               value={currentTime} 
               onChange={handleSliderChange}
+              onMouseDown={handleSliderMouseDown}
+              onMouseUp={handleSliderMouseUp}
+              onTouchStart={handleSliderMouseDown}
+              onTouchEnd={handleSliderMouseUp}
               className="video-progress-slider"
               style={{
                 width: '100%',

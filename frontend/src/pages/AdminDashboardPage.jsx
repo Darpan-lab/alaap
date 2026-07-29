@@ -1,14 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Loader2, Shield, X, ToggleRight, ToggleLeft, Edit, Trash2, 
-  Users, MessageSquare, Search, Send, Play, Key, User, Lock, Sparkles
+  Users, MessageSquare, Search, Send, Play, Key, User, Lock, Sparkles, Tv
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
+import { formatBDMessageTime } from '../utils/dateUtils';
 
 export function AdminDashboardPage({ token, user, onClose, showConfirm, showAlert, onOpenChat, socket, setPopupVideo, logout }) {
   const [stats, setStats] = useState({ totalUsers: 0, totalChats: 0, totalMessages: 0 });
-  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [] });
+  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [], jellyfinUrl: '', jellyfinApiKey: '' });
   const [users, setUsers] = useState([]);
+
+  const [jellyfinUrlInput, setJellyfinUrlInput] = useState('');
+  const [jellyfinUsernameInput, setJellyfinUsernameInput] = useState('');
+  const [jellyfinPasswordInput, setJellyfinPasswordInput] = useState('');
+  const [jellyfinEnabledInput, setJellyfinEnabledInput] = useState(false);
+  const [jellyfinSaveSuccess, setJellyfinSaveSuccess] = useState('');
+  const [jellyfinSaveError, setJellyfinSaveError] = useState('');
+
+  const handleToggleGlobalJellyfin = async () => {
+    const nextState = !jellyfinEnabledInput;
+    setJellyfinEnabledInput(nextState);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jellyfinEnabled: nextState
+        })
+      });
+      if (response.ok) {
+        setSettings(prev => ({ ...prev, jellyfinEnabled: nextState }));
+      } else {
+        setJellyfinEnabledInput(!nextState);
+        showAlert('Failed to update global Jellyfin setting.');
+      }
+    } catch (err) {
+      console.error(err);
+      setJellyfinEnabledInput(!nextState);
+      showAlert('Error connecting to server.');
+    }
+  };
+
+  const handleToggleUserJellyfin = async (targetUser) => {
+    const nextEnabled = !targetUser.jellyfinEnabled;
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: nextEnabled } : u));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-jellyfin`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      if (response.ok) {
+        fetchAdminData();
+      } else {
+        const data = await response.json();
+        setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: targetUser.jellyfinEnabled } : u));
+        showAlert(data.error || 'Failed to toggle Jellyfin permission.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: targetUser.jellyfinEnabled } : u));
+      showAlert('Error connecting to server.');
+    }
+  };
   
   const [activeTab, setActiveTab] = useState('system'); // 'system', 'groups', 'conversations'
   const [groups, setGroups] = useState([]);
@@ -182,6 +243,8 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
   // Admin form inputs
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newJellyfinUsername, setNewJellyfinUsername] = useState('');
+  const [newJellyfinPassword, setNewJellyfinPassword] = useState('');
   const [createUserRole, setCreateUserRole] = useState('Regular');
   const [userError, setUserError] = useState('');
   const [userSuccess, setUserSuccess] = useState('');
@@ -280,13 +343,56 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
       if (response.ok) {
         const data = await response.json();
         setStats(data.stats || { totalUsers: 0, totalChats: 0, totalMessages: 0 });
-        setSettings(data.settings || { signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [] });
+        setSettings(data.settings || { signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [], jellyfinUrl: '', jellyfinApiKey: '' });
+        setJellyfinUrlInput(data.settings?.jellyfinUrl || '');
+        setJellyfinUsernameInput(data.settings?.jellyfinUsername || '');
+        setJellyfinPasswordInput(data.settings?.jellyfinPassword ? '********' : '');
+        setJellyfinEnabledInput(Boolean(data.settings?.jellyfinEnabled));
         setUsers(data.users || []);
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveJellyfinConfig = async (e) => {
+    e.preventDefault();
+    setJellyfinSaveSuccess('');
+    setJellyfinSaveError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jellyfinUrl: jellyfinUrlInput,
+          jellyfinUsername: jellyfinUsernameInput,
+          jellyfinPassword: jellyfinPasswordInput,
+          jellyfinEnabled: jellyfinEnabledInput
+        })
+      });
+
+      if (response.ok) {
+        setJellyfinSaveSuccess('Jellyfin settings saved successfully!');
+        setSettings(prev => ({
+          ...prev,
+          jellyfinUrl: jellyfinUrlInput,
+          jellyfinUsername: jellyfinUsernameInput,
+          jellyfinPassword: jellyfinPasswordInput,
+          jellyfinEnabled: jellyfinEnabledInput
+        }));
+        setTimeout(() => setJellyfinSaveSuccess(''), 4000);
+      } else {
+        const errData = await response.json();
+        setJellyfinSaveError(errData.error || 'Failed to save Jellyfin settings.');
+      }
+    } catch (err) {
+      console.error(err);
+      setJellyfinSaveError('Error connecting to server.');
     }
   };
 
@@ -366,7 +472,9 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
         body: JSON.stringify({
           username: newUsername,
           password: newPassword,
-          role: createUserRole
+          role: createUserRole,
+          jellyfinUsername: newJellyfinUsername,
+          jellyfinPassword: newJellyfinPassword
         })
       });
 
@@ -375,6 +483,8 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
         setUserSuccess(`User "${data.user.username}" created successfully!`);
         setNewUsername('');
         setNewPassword('');
+        setNewJellyfinUsername('');
+        setNewJellyfinPassword('');
         setCreateUserRole('Regular');
         fetchAdminData();
       } else {
@@ -566,32 +676,142 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
             )}
           </div>
 
+          {/* Jellyfin Integration Config */}
+          <div className="admin-card glass-panel config-card mt-6" style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Tv size={20} style={{ color: '#00a4dc' }} />
+              <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              Configure your self-hosted Jellyfin media server and enable or disable the feature globally across Alaap.
+            </p>
+
+            {jellyfinSaveSuccess && <div className="admin-alert success">{jellyfinSaveSuccess}</div>}
+            {jellyfinSaveError && <div className="admin-alert error">{jellyfinSaveError}</div>}
+
+            {user?.role === 'Root' && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(0, 164, 220, 0.08)', borderRadius: '10px', border: '1px solid rgba(0, 164, 220, 0.2)', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#00a4dc' }}>Jellyfin Feature (Global Switch)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Master switch. Disabled by default for all users.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleGlobalJellyfin}
+                  style={{
+                    padding: '6px 14px',
+                    fontWeight: '600',
+                    fontSize: '12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: jellyfinEnabledInput ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    border: jellyfinEnabledInput ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
+                    color: jellyfinEnabledInput ? '#4ade80' : '#f87171'
+                  }}
+                >
+                  {jellyfinEnabledInput ? '✓ Enabled' : '✕ Disabled'}
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveJellyfinConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                  Jellyfin Server Address (URL)
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. http://192.168.1.50:8096 or https://jellyfin.example.com"
+                  className="chat-text-input" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px' }}
+                  value={jellyfinUrlInput}
+                  onChange={(e) => setJellyfinUrlInput(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'rgba(255,255,255,0.8)', marginBottom: '6px' }}>
+                  Jellyfin Username
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Enter Jellyfin Username..."
+                  value={jellyfinUsernameInput}
+                  onChange={(e) => setJellyfinUsernameInput(e.target.value)}
+                  style={{ width: '100%', padding: '10px 14px' }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'rgba(255,255,255,0.8)', marginBottom: '6px' }}>
+                  Jellyfin Password
+                </label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="Enter Jellyfin Password..."
+                  value={jellyfinPasswordInput}
+                  onChange={(e) => setJellyfinPasswordInput(e.target.value)}
+                  style={{ width: '100%', padding: '10px 14px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#00a4dc', borderColor: '#00a4dc', color: '#fff', fontWeight: '600', padding: '8px 16px' }}>
+                  Save Jellyfin Configuration
+                </button>
+              </div>
+            </form>
+          </div>
+
           {/* Quick Create User Form */}
           <div className="admin-card glass-panel create-user-card">
             <h3>Provision User Account</h3>
             {userError && <div className="admin-alert error">{userError}</div>}
             {userSuccess && <div className="admin-alert success">{userSuccess}</div>}
             
-            <form onSubmit={handleCreateUser} className="admin-create-form">
-              <div className="form-group-row">
+            <form onSubmit={handleCreateUser} className="admin-create-form" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="form-group-row" style={{ display: 'flex', gap: '8px' }}>
                 <input 
                   type="text" 
-                  placeholder="Username..." 
+                  placeholder="Alaap Username..." 
                   className="input-field input-sm"
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
+                  style={{ flex: 1 }}
                 />
                 <input 
                   type="password" 
-                  placeholder="Password..." 
+                  placeholder="Alaap Password..." 
                   className="input-field input-sm"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+              </div>
+
+              <div className="form-group-row" style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Jellyfin Username (optional)..." 
+                  className="input-field input-sm"
+                  value={newJellyfinUsername}
+                  onChange={(e) => setNewJellyfinUsername(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <input 
+                  type="password" 
+                  placeholder="Jellyfin Password (optional)..." 
+                  className="input-field input-sm"
+                  value={newJellyfinPassword}
+                  onChange={(e) => setNewJellyfinPassword(e.target.value)}
+                  style={{ flex: 1 }}
                 />
               </div>
               
-              <div className="admin-checkbox-row">
-                {user?.role !== 'Admin' && (
+              <div className="admin-checkbox-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {user?.role !== 'Admin' ? (
                   <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>User Class:</label>
                     <select 
@@ -605,7 +825,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                       <option value="Root">Root</option>
                     </select>
                   </div>
-                )}
+                ) : <div />}
                 <button type="submit" className="btn btn-primary btn-sm">Create User</button>
               </div>
             </form>
@@ -621,8 +841,8 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                 <thead>
                   <tr>
                     <th>Username</th>
-                    <th>Unique ID</th>
                     <th>Role</th>
+                    <th>Jellyfin Access</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -634,13 +854,25 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                       <td className="user-td font-semibold">
                         {u.username}
                       </td>
-                      <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {u._id}
-                      </td>
                       <td>
                         <span className={`role-badge ${u.role === 'Admin' ? 'admin subadmin' : u.isAdmin ? 'admin' : 'user'}`}>
                           {u.role || (u.isAdmin ? 'Root' : 'Regular')}
                         </span>
+                      </td>
+                      <td>
+                        {u.role === 'Root' || u.isAdmin ? (
+                          <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            Root (Always On)
+                          </span>
+                        ) : u.jellyfinEnabled ? (
+                          <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
+                            Enabled
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            Disabled
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span className={`status-text ${u.status}`}>
@@ -651,6 +883,28 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
                       </td>
                       <td style={{ display: 'flex', gap: '8px' }}>
+                        {user?.role === 'Root' && u.role !== 'Root' && !u.isAdmin && (
+                          <button 
+                            type="button"
+                            className="icon-btn" 
+                            onClick={() => handleToggleUserJellyfin(u)}
+                            title={u.jellyfinEnabled ? "Disable Jellyfin access for this user" : "Enable Jellyfin access for this user"}
+                            style={{ 
+                              width: '32px', 
+                              height: '32px', 
+                              padding: '0', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              borderRadius: 'var(--radius-md)',
+                              background: u.jellyfinEnabled ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                              border: u.jellyfinEnabled ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid var(--glass-border)',
+                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)'
+                            }}
+                          >
+                            <Tv size={15} />
+                          </button>
+                        )}
                         <button 
                           className="icon-btn" 
                           onClick={() => openEditUserModal(u)}
@@ -870,7 +1124,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                             {msg.sender?.username || 'Unknown'}
                           </span>
                           <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            {msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                            {msg.createdAt ? formatBDMessageTime(msg.createdAt) : 'N/A'}
                           </span>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
