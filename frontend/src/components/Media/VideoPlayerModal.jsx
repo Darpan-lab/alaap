@@ -7,6 +7,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [bufferedPercent, setBufferedPercent] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -91,9 +92,29 @@ export const VideoPlayerModal = ({ video, onClose }) => {
     videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 5, 0);
   };
 
+  const updateBuffered = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (video.duration > 0 && video.buffered.length > 0) {
+      let currentBuffered = 0;
+      const curr = video.currentTime;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= curr && video.buffered.end(i) >= curr) {
+          currentBuffered = video.buffered.end(i);
+          break;
+        }
+      }
+      if (currentBuffered === 0 && video.buffered.length > 0) {
+        currentBuffered = video.buffered.end(video.buffered.length - 1);
+      }
+      setBufferedPercent((currentBuffered / video.duration) * 100);
+    }
+  };
+
   const handleTimeUpdate = () => {
     if (!videoRef.current || isDragging) return;
     setCurrentTime(videoRef.current.currentTime);
+    updateBuffered();
   };
 
   const handleLoadedMetadata = () => {
@@ -276,6 +297,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
           onClick={togglePlay}
           onDoubleClick={toggleFullscreen}
           onTimeUpdate={handleTimeUpdate}
+          onProgress={updateBuffered}
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
@@ -365,7 +387,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
                 height: '4px',
                 WebkitAppearance: 'none',
                 appearance: 'none',
-                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.2) ${progressPercent}%)`,
+                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
                 borderRadius: '2px',
                 outline: 'none',
                 cursor: 'pointer',

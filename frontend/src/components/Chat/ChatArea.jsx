@@ -3,7 +3,7 @@ import {
   Smile, Mic, Send, UploadCloud, Trash2, Pause, FileText, 
   Download, Play, Check, CheckCheck, CornerUpLeft, MoreVertical, 
   Edit, X, Ban, Loader2, Users, ArrowLeft, PanelLeftOpen, PanelLeftClose, 
-  Eye, EyeOff, Tv, Info, UserMinus, Unlock
+  Eye, EyeOff, Tv, Info, UserMinus, Unlock, Phone
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
@@ -38,7 +38,8 @@ export function ChatArea({
     setSyncPlayIsPlaying,
     playNotificationSound,
     triggerDesktopNotification,
-    addToast
+    addToast,
+    startCall
   } = useChat();
   const { showAlert, showConfirm } = useDialog();
 
@@ -196,7 +197,7 @@ export function ChatArea({
 
         const messageData = {
           chatId: activeChat._id,
-          content: `Sent a file: ${uploadData.fileName}`,
+          content: file.type?.startsWith('image/') ? '' : `Sent a file: ${uploadData.fileName}`,
           fileUrl: uploadData.fileUrl,
           fileName: uploadData.fileName,
           fileType: uploadData.fileType,
@@ -382,7 +383,7 @@ export function ChatArea({
         
         const messageData = {
           chatId: activeChat._id,
-          content: '🎤 Voice Message',
+          content: '',
           fileUrl: uploadData.fileUrl,
           fileName: 'Voice Message.webm',
           fileType: uploadData.fileType || 'audio/webm',
@@ -753,6 +754,15 @@ export function ChatArea({
 
           <button 
             type="button"
+            className="icon-btn"
+            title="Start Voice Call"
+            onClick={() => startCall(activeChat._id, false)}
+          >
+            <Phone size={20} />
+          </button>
+
+          <button 
+            type="button"
             className={`icon-btn ${isInfoPanelOpen ? 'active' : ''}`}
             title={isInfoPanelOpen ? 'Hide Chat Details' : 'Show Chat Details'}
             onClick={() => {
@@ -810,13 +820,15 @@ export function ChatArea({
                       {msg.fileUrl && (
                         msg.fileType?.startsWith('audio/') ? (
                           <AudioMessagePlayer src={msg.fileUrl} />
+                        ) : msg.fileType?.startsWith('image/') ? (
+                          <div className="file-attachment image-only-attachment">
+                            <div className="attachment-image-wrapper" onClick={() => setPreviewImageUrl(msg.fileUrl)}>
+                              <img src={msg.fileUrl} alt={msg.fileName || 'Photo'} className="attachment-preview-img" />
+                            </div>
+                          </div>
                         ) : (
                           <div className="file-attachment">
-                            {msg.fileType?.startsWith('image/') ? (
-                              <div className="attachment-image-wrapper" onClick={() => setPreviewImageUrl(msg.fileUrl)}>
-                                <img src={msg.fileUrl} alt={msg.fileName} className="attachment-preview-img" />
-                              </div>
-                            ) : msg.fileType?.startsWith('video/') ? (
+                            {msg.fileType?.startsWith('video/') ? (
                               <div 
                                 className="attachment-video-preview-wrapper"
                                 onClick={() => setPopupVideo({ url: msg.fileUrl, name: msg.fileName })}
@@ -844,7 +856,7 @@ export function ChatArea({
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="download-btn-attachment"
-                                title="Download Original Quality"
+                                title="Download"
                               >
                                 <Download size={18} />
                               </a>
@@ -1012,7 +1024,7 @@ export function ChatArea({
               <div className="progress-card glass-panel">
                 <Loader2 className="animate-spin" size={24} />
                 <div className="progress-details">
-                  <span>Sending high quality media...</span>
+                  <span>Sending media...</span>
                   <div className="progress-bar-container">
                     <div className="progress-bar-fill" style={{ width: `${uploadProgress}%` }}></div>
                   </div>
@@ -1135,7 +1147,7 @@ export function ChatArea({
                     <button 
                       type="button" 
                       className="input-action-btn" 
-                      title="Send photo/video (Lossless)"
+                      title="Send photo/video"
                       onClick={() => fileInputRef.current?.click()}
                     >
                       <UploadCloud size={22} />

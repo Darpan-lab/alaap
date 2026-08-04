@@ -3,14 +3,15 @@ import io from 'socket.io-client';
 import { 
   MessageSquare, Send, Image, Video, User, Plus, Search, LogOut, 
   Settings, Shield, Trash2, Key, FileText, Download, Users, X, 
-  Loader2, UploadCloud, Check, CheckCheck, Lock, ToggleLeft, ToggleRight, Sparkles, ChevronRight, Edit, ArrowLeft, ArrowLeftRight,
-  Smile, Mic, Play, Pause, CornerUpLeft, Ban, Unlock, MoreVertical, Tv, Eye, EyeOff, UserMinus, PanelLeftClose, PanelLeftOpen, Info,
-  Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff
+  Loader2, UploadCloud, Check, CheckCheck, Lock, ToggleLeft, ToggleRight, Sparkles, ChevronRight, Edit, ArrowLeft, ArrowRight, ArrowLeftRight,
+  Smile, Mic, MicOff, Play, Pause, CornerUpLeft, Ban, Unlock, MoreVertical, Tv, Eye, EyeOff, UserMinus, PanelLeftClose, PanelLeftOpen, Info,
+  Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff, Phone, Menu, Home
 } from 'lucide-react';
 import { API_BASE_URL, SOCKET_URL } from './config';
 import { formatBDMessageTime, formatBDTimeOnly } from './utils/dateUtils';
 import AudioMessagePlayer from './components/Media/AudioMessagePlayer';
 import { JellyfinModal, JellyfinLogo } from './components/SyncPlay/JellyfinModal';
+import { VoiceCallRoom } from './components/Call/VoiceCallRoom';
 import './App.css';
 
 const EMOJI_CATEGORIES = [
@@ -91,6 +92,7 @@ const VideoPlayerModal = ({ video, onClose }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [bufferedPercent, setBufferedPercent] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -174,9 +176,29 @@ const VideoPlayerModal = ({ video, onClose }) => {
     videoRef.current.currentTime = Math.max(videoRef.current.currentTime - 5, 0);
   };
 
+  const updateBuffered = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (video.duration > 0 && video.buffered.length > 0) {
+      let currentBuffered = 0;
+      const curr = video.currentTime;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= curr && video.buffered.end(i) >= curr) {
+          currentBuffered = video.buffered.end(i);
+          break;
+        }
+      }
+      if (currentBuffered === 0 && video.buffered.length > 0) {
+        currentBuffered = video.buffered.end(video.buffered.length - 1);
+      }
+      setBufferedPercent((currentBuffered / video.duration) * 100);
+    }
+  };
+
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     setCurrentTime(videoRef.current.currentTime);
+    updateBuffered();
   };
 
   const handleLoadedMetadata = () => {
@@ -351,6 +373,7 @@ const VideoPlayerModal = ({ video, onClose }) => {
           onClick={togglePlay}
           onDoubleClick={toggleFullscreen}
           onTimeUpdate={handleTimeUpdate}
+          onProgress={updateBuffered}
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
@@ -436,7 +459,7 @@ const VideoPlayerModal = ({ video, onClose }) => {
                 height: '4px',
                 WebkitAppearance: 'none',
                 appearance: 'none',
-                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.2) ${progressPercent}%)`,
+                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
                 borderRadius: '2px',
                 outline: 'none',
                 cursor: 'pointer',
@@ -626,6 +649,40 @@ function App() {
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(!!localStorage.getItem('alaap_token'));
 
+  // Voice Call States
+  const [activeCall, setActiveCall] = useState(null);
+  const [activeVoiceRooms, setActiveVoiceRooms] = useState({}); // { chatId: { isActive: boolean, count: number } }
+  const [callMicEnabled, setCallMicEnabled] = useState(false);
+
+  useEffect(() => {
+    const handleMicChange = (e) => {
+      const isEnabled = e.detail;
+      setCallMicEnabled(isEnabled);
+      // Auto-pause sync play if local mic is unmuted
+      if (isEnabled && syncPlayIsPlayingRef.current) {
+         if (videoPlayerRef.current && !videoPlayerRef.current.paused) {
+             const currentTime = videoPlayerRef.current.currentTime;
+             socketRef.current?.emit('sync_play_update', {
+               chatId: activeChatRef.current?._id,
+               videoId: syncPlayVideoIdRef.current,
+               action: 'pause',
+               currentTime,
+               isPlaying: false
+             });
+             ignorePlayerStateChangeRef.current = true;
+             videoPlayerRef.current.pause();
+             setSyncPlayIsPlaying(false);
+             setTimeout(() => { ignorePlayerStateChangeRef.current = false; }, 800);
+         }
+      }
+    };
+    window.addEventListener('mic-state-changed', handleMicChange);
+    return () => window.removeEventListener('mic-state-changed', handleMicChange);
+  }, []);
+
+  const activeCallRef = useRef(activeCall);
+  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+
   // Width Resizing States
   const sidebarWidth = 320; // Fixed sidebar width
   const [syncPlayWidth, setSyncPlayWidth] = useState(600); // Default sync play width
@@ -682,8 +739,10 @@ function App() {
   
   // App UI State
   const [activeTab, setActiveTab] = useState('chats'); // 'chats' or 'admin'
-  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(() => localStorage.getItem('alaap_isAdminOpen') === 'true');
   const [activeChat, setActiveChat] = useState(null);
+  const initialActiveChatRef = useRef(false);
+  const activeChatIdToRestore = useRef(localStorage.getItem('alaap_activeChatId'));
   const [chats, setChats] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
@@ -696,10 +755,12 @@ function App() {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [groupMembersCache, setGroupMembersCache] = useState({});
   
   // File Upload State
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
   const [isSharingFrame, setIsSharingFrame] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
@@ -739,7 +800,7 @@ function App() {
   });
 
   // Settings Pane State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(() => localStorage.getItem('alaap_isSettingsOpen') === 'true');
 
   // Notification system states
   const [notificationSettings, setNotificationSettings] = useState(() => {
@@ -771,7 +832,7 @@ function App() {
     }
   });
 
-  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(() => localStorage.getItem('alaap_showNotificationCenter') === 'true');
   const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
@@ -839,6 +900,29 @@ function App() {
       osc2.stop(ctx.currentTime + 0.08 + 0.2);
     } catch (e) {
       console.warn('Sound playback blocked or unsupported', e);
+    }
+  };
+
+  const playCallStartSound = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(440, ctx.currentTime);
+      osc1.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      gain1.gain.setValueAtTime(0.8, ctx.currentTime); // Increased volume further
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.25);
+    } catch (e) {
+      console.warn('Could not play call start sound', e);
     }
   };
 
@@ -1101,7 +1185,46 @@ function App() {
   // Manage Group Members states (for existing groups)
   const [addMemberSearchQuery, setAddMemberSearchQuery] = useState('');
   const [addMemberSearchResults, setAddMemberSearchResults] = useState([]);
-  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
+  const [sidebarState, setSidebarState] = useState(() => localStorage.getItem('alaap_sidebarState') || 'full');
+
+  // Persist UI states
+  useEffect(() => {
+    localStorage.setItem('alaap_isAdminOpen', isAdminOpen);
+  }, [isAdminOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('alaap_isSettingsOpen', isSettingsOpen);
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('alaap_showNotificationCenter', showNotificationCenter);
+  }, [showNotificationCenter]);
+
+  useEffect(() => {
+    localStorage.setItem('alaap_sidebarState', sidebarState);
+  }, [sidebarState]);
+
+  useEffect(() => {
+    if (!initialActiveChatRef.current) {
+      initialActiveChatRef.current = true;
+      return;
+    }
+    if (activeChat) {
+      localStorage.setItem('alaap_activeChatId', activeChat._id);
+    } else {
+      localStorage.removeItem('alaap_activeChatId');
+    }
+  }, [activeChat]);
+
+  useEffect(() => {
+    if (chats.length > 0 && activeChatIdToRestore.current && !activeChat) {
+      const chatToRestore = chats.find(c => c._id === activeChatIdToRestore.current);
+      if (chatToRestore) {
+        setActiveChat(chatToRestore);
+      }
+      activeChatIdToRestore.current = null;
+    }
+  }, [chats, activeChat]);
   const [isInfoPanelOpen, setIsInfoPanelOpen] = useState(false);
 
   // Group Settings states
@@ -1436,12 +1559,17 @@ function App() {
     localStorage.setItem('alaap_sync_play_layout_reversed', syncPlayLayoutReversed);
   }, [syncPlayLayoutReversed]);
   const [syncPlayVideoId, setSyncPlayVideoId] = useState('');
+  const syncPlayVideoIdRef = useRef(syncPlayVideoId);
+  useEffect(() => { syncPlayVideoIdRef.current = syncPlayVideoId; }, [syncPlayVideoId]);
+  
   const [syncPlayVideoUrl, setSyncPlayVideoUrl] = useState('');
   const [syncPlayDownloadStatus, setSyncPlayDownloadStatus] = useState('idle');
   const [syncPlayDownloadProgress, setSyncPlayDownloadProgress] = useState(0);
   const [syncPlayDownloadError, setSyncPlayDownloadError] = useState('');
   const videoPlayerRef = useRef(null);
   const [syncPlayIsPlaying, setSyncPlayIsPlaying] = useState(false);
+  const syncPlayIsPlayingRef = useRef(syncPlayIsPlaying);
+  useEffect(() => { syncPlayIsPlayingRef.current = syncPlayIsPlaying; }, [syncPlayIsPlaying]);
   const [syncPlayInputUrl, setSyncPlayInputUrl] = useState('');
   const [isSyncPlayHeaderHidden, setIsSyncPlayHeaderHidden] = useState(false);
   const [isJellyfinModalOpen, setIsJellyfinModalOpen] = useState(false);
@@ -1463,6 +1591,7 @@ function App() {
   // Custom Video Player States
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [videoBufferedRanges, setVideoBufferedRanges] = useState([]);
   const [videoVolume, setVideoVolume] = useState(1);
   const [videoMuted, setVideoMuted] = useState(false);
   const [showCustomControls, setShowCustomControls] = useState(true);
@@ -1849,7 +1978,36 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         setGroupSettingsPicUrl(data.fileUrl);
-        setGroupSettingsSuccess('Group photo uploaded! Click Save to apply changes.');
+        
+        // Auto-save the new group photo
+        try {
+          const updateResponse = await fetch(`${API_BASE_URL}/chats/${activeChat._id}/update`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              name: groupSettingsName.trim(),
+              groupPic: data.fileUrl
+            })
+          });
+          const updatedChat = await updateResponse.json();
+          if (updateResponse.ok) {
+            setActiveChat(updatedChat);
+            setChats(prev => prev.map(c => c._id === updatedChat._id ? updatedChat : c));
+            setGroupSettingsSuccess('Group photo updated successfully!');
+            setTimeout(() => {
+              setGroupSettingsSuccess('');
+            }, 3000);
+          } else {
+            setGroupSettingsError(updatedChat.error || 'Failed to update group photo.');
+          }
+        } catch (updateErr) {
+          console.error(updateErr);
+          setGroupSettingsError('Error updating group photo.');
+        }
+
       } else {
         setGroupSettingsError('Failed to upload group photo.');
       }
@@ -2134,7 +2292,7 @@ function App() {
         
         const messageData = {
           chatId: activeChat._id,
-          content: '🎤 Voice Message',
+          content: '',
           fileUrl: uploadData.fileUrl,
           fileName: 'Voice Message.webm',
           fileType: uploadData.fileType || 'audio/webm',
@@ -2244,13 +2402,7 @@ function App() {
     }
   }, [token]);
 
-  // Close admin dashboard and settings center when activeChat changes
-  useEffect(() => {
-    if (activeChat) {
-      setIsAdminOpen(false);
-      setIsSettingsOpen(false);
-    }
-  }, [activeChat]);
+  // Removed useEffect that closed admin/settings on activeChat change to fix reload bug
 
   // Track activeChat in a Ref to avoid stale closures in socket event listeners
   const activeChatRef = useRef(activeChat);
@@ -2292,6 +2444,13 @@ function App() {
       if (activeChatRef.current) {
         socket.emit('join_chat', activeChatRef.current._id);
       }
+      
+      // Fetch active voice rooms upon connection to ensure late-joiners get the correct initial state
+      socket.emit('call:get_active_rooms', (activeRooms) => {
+        if (activeRooms) {
+          setActiveVoiceRooms(activeRooms);
+        }
+      });
     });
 
     socket.on('receive_message', (message) => {
@@ -2925,14 +3084,72 @@ function App() {
       fetchJellyfinStatus();
     });
 
+    // Voice Call Room Real-time Status Handler
+    socket.on('call:room_status_changed', ({ chatId, isActive, count }) => {
+      setActiveVoiceRooms(prev => ({
+        ...prev,
+        [chatId]: { isActive, count }
+      }));
+    });
+
+
     // Fetch initial chat list
     fetchChats();
-
 
     return () => {
       socket.disconnect();
     };
   }, [token, user]);
+
+  const handleStartCall = async (chatId, isVideo = false) => {
+    if (!token || !chatId) return;
+    try {
+      // Play a feedback sound immediately when button is clicked
+      playCallStartSound();
+      
+      const chat = (chatsRef.current && chatsRef.current.find(c => c._id === chatId)) || activeChatRef.current;
+      const chatDetails = chat && typeof getChatDetails === 'function' ? getChatDetails(chat) : { name: 'Voice Room' };
+      const chatName = chatDetails.name || 'Voice Room';
+
+      const res = await fetch(`${API_BASE_URL}/calls/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ chatId })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to join voice room');
+        return;
+      }
+      const data = await res.json();
+
+      setActiveCall({
+        chatId,
+        token: data.token,
+        url: data.url,
+        roomName: data.roomName,
+        isVideo,
+        chatName
+      });
+
+      // Notify socket server that we joined the voice room
+      socketRef.current?.emit('call:join_room', { chatId });
+    } catch (err) {
+      console.error('[Voice Room] Error joining room:', err);
+      alert('Voice room connection error: ' + err.message);
+    }
+  };
+
+  const handleEndCall = () => {
+    if (activeCallRef.current?.chatId) {
+      socketRef.current?.emit('call:leave_room', { chatId: activeCallRef.current.chatId });
+    }
+    setActiveCall(null);
+  };
 
   // Join/leave active chat rooms reactively
   useEffect(() => {
@@ -3046,12 +3263,11 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         setUser(data);
-      } else {
+      } else if (response.status === 401 || response.status === 403) {
         logout();
       }
     } catch (err) {
-      console.error(err);
-      logout();
+      console.error('Error fetching user:', err);
     } finally {
       setLoadingUser(false);
     }
@@ -3121,6 +3337,8 @@ function App() {
       if (response.ok) {
         const newChat = await response.json();
         setActiveChat(newChat);
+        setIsAdminOpen(false);
+        setIsSettingsOpen(false);
         setSearchQuery('');
         setSearchResults([]);
       }
@@ -3149,6 +3367,8 @@ function App() {
       if (response.ok) {
         const newGroup = await response.json();
         setActiveChat(newGroup);
+        setIsAdminOpen(false);
+        setIsSettingsOpen(false);
         setIsGroupModalOpen(false);
         setNewGroupName('');
         setSelectedGroupMembers([]);
@@ -3160,7 +3380,7 @@ function App() {
 
   const handleSendMessage = (e) => {
     e?.preventDefault();
-    if (!messageInput.trim() || !activeChat) return;
+    if ((!messageInput.trim() && !pendingAttachment) || !activeChat) return;
 
     setEmojiPickerOpen(false);
 
@@ -3180,9 +3400,21 @@ function App() {
       replyTo: replyingToMessage ? replyingToMessage._id : null
     };
 
+    if (pendingAttachment) {
+      messageData.fileUrl = pendingAttachment.fileUrl;
+      messageData.fileName = pendingAttachment.fileName;
+      messageData.fileType = pendingAttachment.fileType;
+      messageData.fileSize = pendingAttachment.fileSize;
+      
+      if (!messageData.content) {
+        messageData.content = pendingAttachment.fileType?.startsWith('image/') ? '' : `Sent a file: ${pendingAttachment.fileName}`;
+      }
+    }
+
     socketRef.current.emit('send_message', messageData);
     setMessageInput('');
     setReplyingToMessage(null);
+    setPendingAttachment(null);
     
     // Stop typing immediately on send
     if (typingTimeoutRef.current) {
@@ -3427,7 +3659,7 @@ function App() {
         // Send the uploaded file details via the socket as a message
         const messageData = {
           chatId: activeChat._id,
-          content: `Sent a file: ${uploadData.fileName}`,
+          content: file.type?.startsWith('image/') ? '' : `Sent a file: ${uploadData.fileName}`,
           fileUrl: uploadData.fileUrl,
           fileName: uploadData.fileName,
           fileType: uploadData.fileType,
@@ -3455,6 +3687,76 @@ function App() {
     const file = e.target.files[0];
     if (file) {
       await uploadFile(file);
+    }
+  };
+
+  const uploadPendingFile = async (file) => {
+    if (!file || !activeChat) return;
+
+    setUploading(true);
+    setUploadProgress(10);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (response.ok) {
+        const uploadData = await response.json();
+        
+        setPendingAttachment({
+          fileUrl: uploadData.fileUrl,
+          fileName: uploadData.fileName,
+          fileType: uploadData.fileType,
+          fileSize: uploadData.fileSize
+        });
+      } else {
+        alert('File upload failed.');
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Error uploading file.');
+    } finally {
+      setTimeout(() => {
+        setUploading(false);
+        setUploadProgress(0);
+      }, 500);
+    }
+  };
+
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          await uploadPendingFile(file);
+          break;
+        }
+      }
     }
   };
 
@@ -4255,7 +4557,7 @@ function App() {
               const uploadData = await response.json();
               const messageData = {
                 chatId: activeChat._id,
-                content: `📸 Shared a video snapshot at ${formattedTime}`,
+                content: `Snapshot at ${formattedTime}`,
                 fileUrl: uploadData.fileUrl,
                 fileName: `snapshot-${formattedTime}.jpg`,
                 fileType: 'image/jpeg',
@@ -4411,7 +4713,7 @@ function App() {
                 const uploadData = await response.json();
                 const messageData = {
                   chatId: activeChat._id,
-                  content: `📸 Shared a video snapshot at ${formattedTime}`,
+                  content: `Snapshot at ${formattedTime}`,
                   fileUrl: uploadData.fileUrl,
                   fileName: `snapshot-${formattedTime}.jpg`,
                   fileType: 'image/jpeg',
@@ -4672,6 +4974,7 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* VoiceCallRoom moved to sidebar */}
       {!token ? (
         <AuthScreen 
           setToken={setToken} 
@@ -4683,49 +4986,49 @@ function App() {
       ) : (
         <div className={`main-workspace glass-panel ${activeChat ? 'active-chat-selected' : ''} ${isAdminOpen ? 'admin-selected' : ''} ${isSettingsOpen ? 'settings-selected' : ''}`}>
           {/* Sidebar */}
-          <div className={`sidebar border-r ${isSidebarHidden ? 'hidden' : ''}`} style={{ width: `${sidebarWidth}px` }}>
-            {/* Sidebar Header */}
-            <div className="sidebar-header border-b">
-              <div className="user-profile">
-                <div className="avatar">
-                  {user?.profilePic ? (
-                    <img src={user.profilePic} alt={user?.username || 'User'} />
-                  ) : (
-                    user?.username?.substring(0, 2).toUpperCase() || 'AL'
-                  )}
-                  <div className="status-dot online"></div>
-                </div>
-                <div className="user-info">
-                  <h3 className="username">{user?.username || 'Loading...'}</h3>
-                  {user?.isAdmin && (
-                    <span className={`admin-badge ${user?.role === 'Admin' ? 'subadmin' : ''}`}>
-                      <Shield size={10} /> {user?.role || 'Root'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="header-actions">
-                {user?.isAdmin && (
-                  <button 
-                    className={`icon-btn ${isAdminOpen ? 'active' : ''}`} 
-                    title="Root Dashboard"
-                    onClick={() => {
-                      setIsAdminOpen(!isAdminOpen);
-                      setIsSettingsOpen(false);
-                    }}
-                  >
-                    <Shield size={20} />
-                  </button>
+          <div className={`sidebar border-r ${sidebarState === 'hidden' ? 'hidden' : ''} ${sidebarState === 'mini' ? 'mini' : ''}`} style={{ width: sidebarState === 'mini' ? '80px' : `${sidebarWidth}px` }}>
+              <div className="sidebar-header border-b">
+                {sidebarState !== 'mini' && (
+                  <div className="user-profile">
+                    <div className="avatar">
+                      {user?.profilePic ? (
+                        <img src={user.profilePic} alt={user?.username || 'User'} />
+                      ) : (
+                        user?.username?.substring(0, 2).toUpperCase() || 'AL'
+                      )}
+                      <div className="status-dot online"></div>
+                    </div>
+                    <div className="user-info">
+                      <h3 className="username">{user?.username || 'Loading...'}</h3>
+                      {user?.isAdmin && (
+                        <span className={`admin-badge ${user?.role === 'Admin' ? 'subadmin' : ''}`}>
+                          <Shield size={10} /> {user?.role || 'Root'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 )}
-                
-                {/* Notification Bell */}
-                <button 
-                  className={`icon-btn ${showNotificationCenter ? 'active' : ''}`} 
-                  title="Notifications"
+                <div className="header-actions">
+                  {user?.isAdmin && sidebarState !== 'mini' && (
+                    <button 
+                      className={`icon-btn ${isAdminOpen ? 'active' : ''}`} 
+                      title="Root Dashboard"
+                      onClick={() => {
+                        setIsAdminOpen(!isAdminOpen);
+                        setIsSettingsOpen(false);
+                      }}
+                    >
+                      <Shield size={20} />
+                    </button>
+                  )}
+                  
+                  {/* Notification Bell */}
+                  {sidebarState !== 'mini' && (
+                    <button 
+                      className={`icon-btn ${showNotificationCenter ? 'active' : ''}`} 
+                      title="Notifications"
                   onClick={() => {
                     setShowNotificationCenter(!showNotificationCenter);
-                    setIsSettingsOpen(false);
-                    setIsAdminOpen(false);
                   }}
                   style={{ position: 'relative' }}
                 >
@@ -4741,16 +5044,16 @@ function App() {
                       borderRadius: '50%',
                       border: '1.5px solid rgba(15, 17, 26, 0.95)'
                     }}></span>
+                    )}
+                  </button>
                   )}
-                </button>
 
-                <button 
+                  <button 
                   className={`icon-btn ${isSettingsOpen ? 'active' : ''}`} 
                   title="Settings"
                   onClick={() => {
                     setIsSettingsOpen(!isSettingsOpen);
                     setIsAdminOpen(false);
-                    setShowNotificationCenter(false);
                   }}
                 >
                   <Settings size={20} />
@@ -4826,7 +5129,11 @@ function App() {
                         onClick={() => {
                           setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
                           const targetChat = chats.find(c => c._id === n.chatId);
-                          if (targetChat) setActiveChat(targetChat);
+                          if (targetChat) {
+                            setActiveChat(targetChat);
+                            setIsAdminOpen(false);
+                            setIsSettingsOpen(false);
+                          }
                           setShowNotificationCenter(false);
                         }}
                       >
@@ -4865,11 +5172,25 @@ function App() {
                 )}
               </div>
               
-              {/* Group Chat Trigger */}
-              <button className="new-group-btn" onClick={() => setIsGroupModalOpen(true)}>
-                <Plus size={18} />
-                <span>Create Group</span>
-              </button>
+              {/* Group Chat & Home Trigger */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  className="new-group-btn" 
+                  style={{ width: 'auto', padding: '0 12px' }}
+                  onClick={() => {
+                    setActiveChat(null);
+                    setIsAdminOpen(false);
+                    setIsSettingsOpen(false);
+                  }}
+                  title="Home"
+                >
+                  <Home size={18} />
+                </button>
+                <button className="new-group-btn" style={{ flex: 1 }} onClick={() => setIsGroupModalOpen(true)}>
+                  <Plus size={18} />
+                  <span>Create Group</span>
+                </button>
+              </div>
             </div>
 
             {/* Search Results list */}
@@ -4923,7 +5244,11 @@ function App() {
                     <div 
                       key={chat._id} 
                       className={`chat-item hover-item ${isActive ? 'active' : ''}`}
-                      onClick={() => setActiveChat(chat)}
+                      onClick={() => {
+                        setActiveChat(chat);
+                        setIsAdminOpen(false);
+                        setIsSettingsOpen(false);
+                      }}
                     >
                       <div className="avatar">
                         {chat.isGroup ? (
@@ -5017,6 +5342,11 @@ function App() {
             </div>
           </>
         )}
+        <VoiceCallRoom 
+          activeCall={activeCall} 
+          onLeave={handleEndCall} 
+          isMini={sidebarState === 'mini'}
+        />
       </div>
           
 
@@ -5077,6 +5407,8 @@ function App() {
               notificationSettings={notificationSettings}
               setNotificationSettings={setNotificationSettings}
               requestNotificationPermission={requestNotificationPermission}
+              sidebarState={sidebarState}
+              setSidebarState={setSidebarState}
             />
           ) : activeChat ? (
             <div 
@@ -5101,6 +5433,18 @@ function App() {
                 <div className="chat-header-info">
                   <button className="icon-btn mobile-back-btn" onClick={() => setActiveChat(null)} title="Back to Chats">
                     <ArrowLeft size={20} />
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`icon-btn desktop-only-btn ${sidebarState !== 'full' ? 'active' : ''}`}
+                    title={sidebarState === 'full' ? 'Minimize Sidebar' : sidebarState === 'mini' ? 'Hide Sidebar' : 'Show Sidebar'}
+                    onClick={() => {
+                      if (sidebarState === 'full') setSidebarState('mini');
+                      else if (sidebarState === 'mini') setSidebarState('hidden');
+                      else setSidebarState('full');
+                    }}
+                  >
+                    {sidebarState === 'full' ? <PanelLeftClose size={20} /> : sidebarState === 'mini' ? <Menu size={20} /> : <PanelLeftOpen size={20} />}
                   </button>
                   <div className="avatar">
                     {activeChat.isGroup ? (
@@ -5127,14 +5471,33 @@ function App() {
                   </div>
                 </div>
                 <div className="chat-header-actions">
-                  <button 
-                    type="button" 
-                    className={`icon-btn desktop-only-btn ${isSidebarHidden ? 'active' : ''}`}
-                    title={isSidebarHidden ? 'Show Sidebar' : 'Hide Sidebar'}
-                    onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-                  >
-                    {isSidebarHidden ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
-                  </button>
+
+                  {(() => {
+                    const roomStatus = activeVoiceRooms[activeChat?._id];
+                    const isRoomActive = roomStatus?.isActive || activeCall?.chatId === activeChat?._id;
+                    const participantCount = roomStatus?.count || (activeCall?.chatId === activeChat?._id ? 1 : 0);
+
+                    return activeChat && (
+                      <button 
+                        type="button"
+                        className={`icon-btn ${isRoomActive ? 'call-header-btn-active' : ''}`}
+                        title={isRoomActive ? `Voice Call Ongoing (${participantCount} active) - Click to Join` : "Start Voice Call"}
+                        style={{ margin: '0 10px' }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (activeChat?._id) {
+                            handleStartCall(activeChat._id, false);
+                          } else {
+                            alert('No active chat selected.');
+                          }
+                        }}
+                      >
+                        {isRoomActive && <div className="call-pulse-ring" />}
+                        <Phone size={20} color={isRoomActive ? "#22c55e" : "currentColor"} />
+                      </button>
+                    );
+                  })()}
 
                   {activeChat && syncPlayActive && (
                     <button 
@@ -5256,20 +5619,22 @@ function App() {
                           {msg.fileUrl && (
                             msg.fileType.startsWith('audio/') ? (
                               <AudioMessagePlayer src={msg.fileUrl} />
+                            ) : msg.fileType.startsWith('image/') ? (
+                              <div className="file-attachment image-only-attachment">
+                                <div className="attachment-image-wrapper" onClick={() => {
+                                  setPreviewImageUrl(msg.fileUrl);
+                                  setPreviewImageMsg(msg);
+                                }}>
+                                  <img 
+                                    src={msg.fileUrl} 
+                                    alt={msg.fileName || 'Photo'} 
+                                    className="attachment-preview-img"
+                                  />
+                                </div>
+                              </div>
                             ) : (
                               <div className="file-attachment">
-                                {msg.fileType.startsWith('image/') ? (
-                                  <div className="attachment-image-wrapper" onClick={() => {
-                                    setPreviewImageUrl(msg.fileUrl);
-                                    setPreviewImageMsg(msg);
-                                  }}>
-                                    <img 
-                                      src={msg.fileUrl} 
-                                      alt={msg.fileName} 
-                                      className="attachment-preview-img"
-                                    />
-                                  </div>
-                                ) : msg.fileType.startsWith('video/') ? (
+                                {msg.fileType.startsWith('video/') ? (
                                   <div 
                                     className="attachment-video-preview-wrapper"
                                     onClick={() => setPopupVideo({ url: msg.fileUrl, name: msg.fileName })}
@@ -5301,7 +5666,7 @@ function App() {
                                     target="_blank" 
                                     rel="noopener noreferrer" 
                                     className="download-btn-attachment"
-                                    title="Download Original Quality"
+                                    title="Download"
                                   >
                                     <Download size={18} />
                                   </a>
@@ -5311,7 +5676,7 @@ function App() {
                           )}
 
                           {/* Render text content */}
-                          {msg.content && (
+                          {msg.content && (!msg.fileUrl || (!msg.content.startsWith('Sent a file:') && msg.content !== '📷 Photo' && msg.content !== '🎤 Voice Message' && !msg.content.startsWith('📎 '))) && (
                             <p className="message-text">
                               {renderMessageContent(msg)}
                             </p>
@@ -5486,7 +5851,7 @@ function App() {
                   <div className="progress-card glass-panel">
                     <Loader2 className="animate-spin" size={24} />
                     <div className="progress-details">
-                      <span>Sending high quality media...</span>
+                      <span>Sending media...</span>
                       <div className="progress-bar-container">
                         <div className="progress-bar-fill" style={{ width: `${uploadProgress}%` }}></div>
                       </div>
@@ -5508,6 +5873,30 @@ function App() {
                     type="button" 
                     className="reply-preview-close" 
                     onClick={() => setReplyingToMessage(null)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
+
+              {/* Pending Attachment Preview Bar */}
+              {pendingAttachment && (
+                <div className="reply-preview-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                  <div className="reply-preview-content" style={{ display: 'flex', alignItems: 'center' }}>
+                    {pendingAttachment.fileUrl && pendingAttachment.fileType?.startsWith('image/') && (
+                      <img src={pendingAttachment.fileUrl} alt="Preview" style={{ height: '40px', borderRadius: '4px', marginRight: '10px', objectFit: 'cover' }} />
+                    )}
+                    <div>
+                      <span className="reply-preview-title" style={{ fontSize: '12px', color: '#a0a0a0' }}>Attachment Preview</span>
+                      <p className="reply-preview-subtitle" style={{ fontSize: '13px', margin: 0 }}>
+                        {pendingAttachment.fileName}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="reply-preview-close" 
+                    onClick={() => setPendingAttachment(null)}
                   >
                     <X size={18} />
                   </button>
@@ -5622,7 +6011,7 @@ function App() {
                         <button 
                           type="button" 
                           className="input-action-btn" 
-                          title="Send photo/video (Lossless)"
+                          title="Send photo/video"
                           onClick={() => fileInputRef.current?.click()}
                         >
                           <UploadCloud size={22} />
@@ -5704,6 +6093,7 @@ function App() {
                               setMessageInput(e.target.value);
                               handleTyping();
                             }}
+                            onPaste={handlePaste}
                           />
 
                           <button 
@@ -5716,7 +6106,7 @@ function App() {
                           </button>
                         </div>
 
-                        <button type="submit" className="send-msg-btn" disabled={!messageInput.trim()}>
+                        <button type="submit" className="send-msg-btn" disabled={!messageInput.trim() && !pendingAttachment}>
                           <Send size={18} />
                         </button>
                       </>
@@ -5744,7 +6134,7 @@ function App() {
                 <div className="sync-play-header border-b" style={{ display: isSyncPlayHeaderHidden ? 'none' : 'flex' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Tv size={18} className="animate-pulse" style={{ color: 'var(--primary)' }} />
-                    <h3 style={{ margin: 0 }}>Sync Play 🍿</h3>
+                    <h3 style={{ margin: 0 }}>Sync Play</h3>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <button 
@@ -6057,6 +6447,31 @@ function App() {
                               const dur = e.target.duration;
                               if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
                             }
+                            
+                            const video = e.target;
+                            if (video.duration > 0 && video.buffered.length > 0) {
+                              const ranges = [];
+                              for (let i = 0; i < video.buffered.length; i++) {
+                                ranges.push({
+                                  start: (video.buffered.start(i) / video.duration) * 100,
+                                  end: (video.buffered.end(i) / video.duration) * 100
+                                });
+                              }
+                              setVideoBufferedRanges(ranges);
+                            }
+                          }}
+                          onProgress={(e) => {
+                            const video = e.target;
+                            if (video.duration > 0 && video.buffered.length > 0) {
+                              const ranges = [];
+                              for (let i = 0; i < video.buffered.length; i++) {
+                                ranges.push({
+                                  start: (video.buffered.start(i) / video.duration) * 100,
+                                  end: (video.buffered.end(i) / video.duration) * 100
+                                });
+                              }
+                              setVideoBufferedRanges(ranges);
+                            }
                           }}
                           onClick={handleVideoAreaClick}
                         />
@@ -6132,6 +6547,22 @@ function App() {
                             onMouseEnter={() => setIsHoveringTimeline(true)}
                             onMouseLeave={() => setIsHoveringTimeline(false)}
                           >
+                            {videoBufferedRanges.map((range, idx) => (
+                              <div 
+                                key={`buffered-${idx}`}
+                                className="custom-timeline-buffered"
+                                style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: `${range.start}%`,
+                                  width: `${range.end - range.start}%`,
+                                  height: '100%',
+                                  background: 'rgba(255, 255, 255, 0.6)',
+                                  borderRadius: '4px',
+                                  zIndex: 0
+                                }}
+                              />
+                            ))}
                             <div 
                               className="custom-timeline-progress"
                               style={{
@@ -6139,7 +6570,8 @@ function App() {
                                 height: '100%',
                                 background: '#3b82f6', // blue color timeline
                                 borderRadius: '4px',
-                                position: 'relative'
+                                position: 'relative',
+                                zIndex: 1
                               }}
                             >
                               <div 
@@ -6231,6 +6663,24 @@ function App() {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+                              <button 
+                                type="button" 
+                                className="syncplay-control-btn"
+                                disabled={!activeCall}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.dispatchEvent(new Event('toggle-mic'));
+                                }}
+                                title={!activeCall ? "Join voice call to use microphone" : callMicEnabled ? "Mute Microphone" : "Unmute Microphone"}
+                                style={{ 
+                                  color: callMicEnabled ? '#ffffff' : '#ef4444',
+                                  opacity: !activeCall ? 0.5 : 1,
+                                  cursor: !activeCall ? 'not-allowed' : 'pointer'
+                                }}
+                              >
+                                {callMicEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+                              </button>
 
                               {/* Playback Speed Select */}
                               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -6472,7 +6922,7 @@ function App() {
                                       )}
 
                                       {/* Message Content (Text & Emojis) */}
-                                      {msg.content && (!msg.fileUrl || (msg.content !== '📷 Photo' && msg.content !== '🎤 Voice Message' && !msg.content.startsWith('📎 '))) && (
+                                      {msg.content && (!msg.fileUrl || (!msg.content.startsWith('Sent a file:') && msg.content !== '📷 Photo' && msg.content !== '🎤 Voice Message' && !msg.content.startsWith('📎 '))) && (
                                         <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>
                                           {msg.content}
                                         </span>
@@ -6803,7 +7253,7 @@ function App() {
                           type="text"
                           placeholder="Paste video link..."
                           className="sync-play-url-input"
-                          style={{ width: '100%', paddingRight: '75px' }}
+                          style={{ width: '100%', paddingRight: '50px' }}
                           value={syncPlayInputUrl}
                           onChange={(e) => setSyncPlayInputUrl(e.target.value)}
                           onKeyDown={(e) => {
@@ -6815,16 +7265,19 @@ function App() {
                           className="btn btn-primary btn-sm"
                           style={{
                             position: 'absolute',
-                            right: '5px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            padding: '5px 14px',
-                            fontSize: '13px',
-                            height: 'calc(100% - 10px)'
+                            right: '0',
+                            top: '0',
+                            padding: '0 16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '100%',
+                            borderRadius: '0 var(--radius-sm) var(--radius-sm) 0'
                           }}
                           onClick={() => handleChangeVideo(syncPlayInputUrl)}
+                          title="Load Video"
                         >
-                          Load
+                          <ArrowRight size={16} />
                         </button>
                       </div>
                       <button 
@@ -6919,6 +7372,26 @@ function App() {
                         title="Force Sync Timeline"
                       >
                         <RefreshCw size={14} />
+                      </button>
+                      <button 
+                        type="button"
+                        className="btn btn-secondary btn-sm flex items-center"
+                        disabled={!activeCall}
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          color: callMicEnabled ? 'inherit' : '#ef4444',
+                          opacity: !activeCall ? 0.5 : 1,
+                          cursor: !activeCall ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          window.dispatchEvent(new Event('toggle-mic'));
+                        }}
+                        title={!activeCall ? "Join voice call to use microphone" : callMicEnabled ? "Mute Microphone" : "Unmute Microphone"}
+                      >
+                        {callMicEnabled ? <Mic size={14} /> : <MicOff size={14} />}
                       </button>
                     </div>
                   </div>
@@ -7201,7 +7674,7 @@ function App() {
                   </div>
                 </div>
                 <h1 className="splash-title glow-text-primary">Welcome to Alaap</h1>
-                <p className="splash-subtitle">A modern, secure, and beautiful lossless chat interface. Search a user or create a group to start conversation.</p>
+                <p className="splash-subtitle">A modern, secure, and beautiful chat interface. Search a user or create a group to start conversation.</p>
                 <div className="features-grid">
                   <div className="feature-card glass-panel">
                     <Tv size={24} className="feature-icon primary" />
@@ -7253,14 +7726,17 @@ function App() {
                   <label>Selected Members ({selectedGroupMembers.length})</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
                     {selectedGroupMembers.map(memberId => {
-                      let uName = 'User';
-                      const foundInChats = chats.find(c => !c.isGroup && c.members.some(m => m._id === memberId));
-                      if (foundInChats) {
-                        const mDetails = foundInChats.members.find(m => m._id === memberId);
-                        if (mDetails) uName = mDetails.username;
-                      } else {
-                        const foundInSearch = groupMemberSearchResults.find(u => u._id === memberId);
-                        if (foundInSearch) uName = foundInSearch.username;
+                      let uName = groupMembersCache[memberId];
+                      if (!uName) {
+                        uName = 'User';
+                        const foundInChats = chats.find(c => !c.isGroup && c.members.some(m => m._id === memberId));
+                        if (foundInChats) {
+                          const mDetails = foundInChats.members.find(m => m._id === memberId);
+                          if (mDetails) uName = mDetails.username;
+                        } else {
+                          const foundInSearch = groupMemberSearchResults.find(u => u._id === memberId);
+                          if (foundInSearch) uName = foundInSearch.username;
+                        }
                       }
                       
                       return (
@@ -7308,6 +7784,9 @@ function App() {
                               setSelectedGroupMembers(prev => 
                                 isSelected ? prev.filter(id => id !== sUser._id) : [...prev, sUser._id]
                               );
+                              if (!isSelected) {
+                                setGroupMembersCache(prev => ({...prev, [sUser._id]: sUser.username}));
+                              }
                             }}
                           >
                             <div className="avatar">
@@ -7335,6 +7814,9 @@ function App() {
                             setSelectedGroupMembers(prev => 
                               isSelected ? prev.filter(id => id !== oUser._id) : [...prev, oUser._id]
                             );
+                            if (!isSelected) {
+                              setGroupMembersCache(prev => ({...prev, [oUser._id]: oUser.username}));
+                            }
                           }}
                         >
                           <div className="avatar">
@@ -8119,6 +8601,7 @@ function AuthScreen({ setToken, setUser, systemSettings, fetchSystemSignupSettin
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -8201,13 +8684,22 @@ function AuthScreen({ setToken, setUser, systemSettings, fetchSystemSignupSettin
             <div className="input-with-icon">
               <Lock className="input-icon" size={18} />
               <input 
-                type="password" 
+                type={showPassword ? "text" : "password"} 
                 placeholder="Enter password..." 
-                className="input-field" 
+                className="input-field has-right-icon" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+              <button
+                type="button"
+                className="password-toggle-btn"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
@@ -8853,6 +9345,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
           <Shield className="admin-header-icon" />
           <div>
             <h2>Alaap Control Center</h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Manage system configurations, user access, and server integrations.</p>
           </div>
         </div>
         <button className="icon-btn close-admin-btn" onClick={onClose} title="Back to Chats">
@@ -8992,18 +9485,14 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                 <button
                   type="button"
                   onClick={handleToggleGlobalJellyfin}
-                  style={{
-                    padding: '6px 14px',
-                    fontWeight: '600',
-                    fontSize: '12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: adminJellyfinEnabledInput ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    border: adminJellyfinEnabledInput ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
-                    color: adminJellyfinEnabledInput ? '#4ade80' : '#f87171'
-                  }}
+                  className={`toggle-btn ${adminJellyfinEnabledInput ? 'active' : ''}`}
+                  title={adminJellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
                 >
-                  {adminJellyfinEnabledInput ? '✓ Enabled' : '✕ Disabled'}
+                  {adminJellyfinEnabledInput ? (
+                    <ToggleRight size={38} className="toggle-on" />
+                  ) : (
+                    <ToggleLeft size={38} className="toggle-off" />
+                  )}
                 </button>
               </div>
             )}
@@ -9051,7 +9540,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '4px' }}>
                 <button 
                   type="button" 
                   onClick={handleTestAdminJellyfinConfig}
@@ -9059,7 +9548,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                   className="btn btn-secondary btn-sm" 
                   style={{ fontWeight: '600', padding: '8px 16px' }}
                 >
-                  {adminJellyfinTesting ? 'Testing...' : 'Test Connection 🔍'}
+                  {adminJellyfinTesting ? 'Testing...' : 'Test Connection'}
                 </button>
                 <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#00a4dc', borderColor: '#00a4dc', color: '#fff', fontWeight: '600', padding: '8px 16px' }}>
                   Save Jellyfin Configuration
@@ -9094,8 +9583,8 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
               
               <div className="admin-checkbox-row">
                 {user?.role !== 'Admin' && (
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 0 }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>User Class:</label>
+                  <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>User Class:</label>
                     <select 
                       className="input-field input-sm"
                       value={createUserRole}
@@ -9125,7 +9614,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                     <th>Username</th>
                     <th>Unique ID</th>
                     <th>Role</th>
-                    <th>Jellyfin Access</th>
+                    <th style={{ textAlign: 'center' }}>Jellyfin Access</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -9145,11 +9634,33 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                           {u.role || (u.isAdmin ? 'Root' : 'Regular')}
                         </span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         {u.role === 'Root' || u.isAdmin ? (
                           <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
                             Root (Always On)
                           </span>
+                        ) : user?.role === 'Root' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUserJellyfin(u)}
+                            title={u.jellyfinEnabled ? "Click to disable Jellyfin access" : "Click to enable Jellyfin access"}
+                            style={{
+                              cursor: 'pointer',
+                              border: u.jellyfinEnabled ? '1px solid rgba(0,164,220,0.4)' : '1px solid var(--glass-border)',
+                              background: u.jellyfinEnabled ? 'rgba(0,164,220,0.15)' : 'rgba(255,255,255,0.05)',
+                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)',
+                              fontWeight: '600',
+                              fontSize: '0.75rem',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {u.jellyfinEnabled ? '✓ Enabled' : '✕ Disabled'}
+                          </button>
                         ) : u.jellyfinEnabled ? (
                           <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
                             Enabled
@@ -9169,28 +9680,6 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                         {new Date(u.createdAt).toLocaleDateString()}
                       </td>
                       <td style={{ display: 'flex', gap: '8px' }}>
-                        {user?.role === 'Root' && u.role !== 'Root' && !u.isAdmin && (
-                          <button 
-                            type="button"
-                            className="icon-btn" 
-                            onClick={() => handleToggleUserJellyfin(u)}
-                            title={u.jellyfinEnabled ? "Disable Jellyfin access for this user" : "Enable Jellyfin access for this user"}
-                            style={{ 
-                              width: '32px', 
-                              height: '32px', 
-                              padding: '0', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              borderRadius: 'var(--radius-md)',
-                              background: u.jellyfinEnabled ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                              border: u.jellyfinEnabled ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid var(--glass-border)',
-                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)'
-                            }}
-                          >
-                            <Tv size={15} />
-                          </button>
-                        )}
                         <button 
                           className="icon-btn" 
                           onClick={() => openEditUserModal(u)}
@@ -9427,7 +9916,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                           >
                             {msg.fileUrl ? (
                               msg.fileType?.startsWith('image/') ? (
-                                <img src={msg.fileUrl} alt="Lossless Upload" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px' }} />
+                                <img src={msg.fileUrl} alt="Upload" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px' }} />
                               ) : msg.fileType?.startsWith('video/') ? (
                                 <div 
                                   className="attachment-video-preview-wrapper"
@@ -9571,7 +10060,9 @@ function SettingsCenter({
   setDeferredPrompt,
   notificationSettings,
   setNotificationSettings,
-  requestNotificationPermission
+  requestNotificationPermission,
+  sidebarState,
+  setSidebarState
 }) {
   const [profileUsername, setProfileUsername] = useState(user?.username || '');
   const [profilePassword, setProfilePassword] = useState('');
@@ -9665,9 +10156,21 @@ function SettingsCenter({
     <div className="admin-pane settings-center-pane animate-fade-in">
       <div className="admin-header border-b">
         <div className="admin-title-area">
-          <Settings className="admin-header-icon" />
+          <button 
+            type="button" 
+            className={`icon-btn desktop-only-btn ${sidebarState !== 'full' ? 'active' : ''}`}
+            onClick={() => {
+              if (sidebarState === 'full') setSidebarState('mini');
+              else if (sidebarState === 'mini') setSidebarState('hidden');
+              else setSidebarState('full');
+            }}
+            title={sidebarState === 'full' ? 'Minimize Sidebar' : sidebarState === 'mini' ? 'Hide Sidebar' : 'Show Sidebar'}
+          >
+            {sidebarState === 'full' ? <PanelLeftClose size={22} /> : sidebarState === 'mini' ? <Menu size={22} /> : <PanelLeftOpen size={22} />}
+          </button>
           <div>
             <h2>Settings Center</h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Manage your personal profile, notification sounds, and account preferences.</p>
           </div>
         </div>
         <button className="close-admin-btn icon-btn" onClick={onClose} title="Back to Chats">
@@ -9905,7 +10408,7 @@ function SettingsCenter({
             {(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) ? (
               <div className="admin-alert success" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Sparkles size={18} />
-                <span>You are running the premium Alaap app experience. Updates are automatically synced in the background.</span>
+                <span>You are running Alaap in desktop app mode. Updates are automatically synced in the background.</span>
               </div>
             ) : deferredPrompt ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

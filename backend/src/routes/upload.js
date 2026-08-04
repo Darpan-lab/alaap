@@ -6,7 +6,7 @@ import { auth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Configure storage for multer without modifying the quality of files (direct save)
+// Configure storage for multer (direct save)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/');
@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit for high-quality photos/videos
+    fileSize: 100 * 1024 * 1024 // 100MB limit for photos/videos
   }
 });
 
@@ -38,7 +38,7 @@ router.post('/', auth, upload.single('file'), (req, res) => {
     const fileUrl = `/uploads/${req.file.filename}`;
 
     res.json({
-      message: 'File uploaded successfully without quality loss.',
+      message: 'File uploaded successfully.',
       fileUrl,
       fileName: req.file.originalname,
       fileType: req.file.mimetype,

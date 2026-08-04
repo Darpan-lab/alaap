@@ -97,6 +97,7 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+console.log("Service Worker Version: 1.1.6");
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

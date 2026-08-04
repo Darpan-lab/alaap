@@ -5,6 +5,7 @@ import Message from '../models/Message.js';
 import registerChatHandlers from './chatHandler.js';
 import registerSyncPlayHandlers from './syncPlayHandler.js';
 import registerUserHandlers from './userHandler.js';
+import registerCallHandlers from './callHandler.js';
 
 // Global map tracks user id -> socket.id for status notifications and delivery checks
 export const socketUserMap = new Map();
@@ -67,9 +68,15 @@ export function initSocket(io) {
     }
 
     // Register handlers
+    console.log(`Registering chat handlers...`);
     registerChatHandlers(io, socket);
+    console.log(`Registering sync play handlers...`);
     registerSyncPlayHandlers(io, socket);
+    console.log(`Registering user handlers...`);
     registerUserHandlers(io, socket);
+    console.log(`Registering call handlers...`);
+    registerCallHandlers(io, socket);
+    console.log(`All handlers registered!`);
 
     // Disconnection handler
     socket.on('disconnect', async () => {

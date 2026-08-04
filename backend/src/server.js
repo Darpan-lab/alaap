@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
+import registerCallHandlers from './socket/callHandler.js';
 
 // Models
 import User from './models/User.js';
@@ -24,6 +25,8 @@ import chatsRoutes from './routes/chats.js';
 import adminRoutes, { getSetting } from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
 import jellyfinRoutes, { getJellyfinConfig, getJellyfinAuth } from './routes/jellyfin.js';
+import callsRoutes from './routes/calls.js';
+import webhooksRoutes from './routes/webhooks.js';
 
 import bcrypt from 'bcryptjs';
 
@@ -492,13 +495,17 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
+
+// IMPORTANT: Mount webhook route BEFORE express.json()
+app.use('/api/webhooks', webhooksRoutes);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded files statically with CORS headers enabled
 app.use('/uploads', express.static(uploadsDir, {
@@ -514,6 +521,7 @@ app.use('/api/chats', chatsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/jellyfin', jellyfinRoutes);
+app.use('/api/calls', callsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -589,6 +597,9 @@ io.on('connection', async (socket) => {
   } catch (err) {
     console.error('Error marking messages as delivered on connection:', err);
   }
+
+  // Register Voice Call Socket Handlers
+  registerCallHandlers(io, socket);
 
   // Room Joiner
   socket.on('join_chat', async (chatId) => {

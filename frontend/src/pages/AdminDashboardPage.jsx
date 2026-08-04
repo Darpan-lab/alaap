@@ -698,18 +698,14 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                 <button
                   type="button"
                   onClick={handleToggleGlobalJellyfin}
-                  style={{
-                    padding: '6px 14px',
-                    fontWeight: '600',
-                    fontSize: '12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: jellyfinEnabledInput ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    border: jellyfinEnabledInput ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
-                    color: jellyfinEnabledInput ? '#4ade80' : '#f87171'
-                  }}
+                  className={`toggle-btn ${jellyfinEnabledInput ? 'active' : ''}`}
+                  title={jellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
                 >
-                  {jellyfinEnabledInput ? '✓ Enabled' : '✕ Disabled'}
+                  {jellyfinEnabledInput ? (
+                    <ToggleRight size={38} className="toggle-on" />
+                  ) : (
+                    <ToggleLeft size={38} className="toggle-off" />
+                  )}
                 </button>
               </div>
             )}
@@ -812,8 +808,8 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
               
               <div className="admin-checkbox-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 {user?.role !== 'Admin' ? (
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 0 }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>User Class:</label>
+                  <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>User Class:</label>
                     <select 
                       className="input-field input-sm"
                       value={createUserRole}
@@ -842,7 +838,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                   <tr>
                     <th>Username</th>
                     <th>Role</th>
-                    <th>Jellyfin Access</th>
+                    <th style={{ textAlign: 'center' }}>Jellyfin Access</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -859,11 +855,33 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                           {u.role || (u.isAdmin ? 'Root' : 'Regular')}
                         </span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         {u.role === 'Root' || u.isAdmin ? (
                           <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
                             Root (Always On)
                           </span>
+                        ) : user?.role === 'Root' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUserJellyfin(u)}
+                            title={u.jellyfinEnabled ? "Click to disable Jellyfin access" : "Click to enable Jellyfin access"}
+                            style={{
+                              cursor: 'pointer',
+                              border: u.jellyfinEnabled ? '1px solid rgba(0,164,220,0.4)' : '1px solid var(--glass-border)',
+                              background: u.jellyfinEnabled ? 'rgba(0,164,220,0.15)' : 'rgba(255,255,255,0.05)',
+                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)',
+                              fontWeight: '600',
+                              fontSize: '0.75rem',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {u.jellyfinEnabled ? '✓ Enabled' : '✕ Disabled'}
+                          </button>
                         ) : u.jellyfinEnabled ? (
                           <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
                             Enabled
@@ -883,28 +901,6 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
                       </td>
                       <td style={{ display: 'flex', gap: '8px' }}>
-                        {user?.role === 'Root' && u.role !== 'Root' && !u.isAdmin && (
-                          <button 
-                            type="button"
-                            className="icon-btn" 
-                            onClick={() => handleToggleUserJellyfin(u)}
-                            title={u.jellyfinEnabled ? "Disable Jellyfin access for this user" : "Enable Jellyfin access for this user"}
-                            style={{ 
-                              width: '32px', 
-                              height: '32px', 
-                              padding: '0', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              borderRadius: 'var(--radius-md)',
-                              background: u.jellyfinEnabled ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                              border: u.jellyfinEnabled ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid var(--glass-border)',
-                              color: u.jellyfinEnabled ? '#00a4dc' : 'var(--text-muted)'
-                            }}
-                          >
-                            <Tv size={15} />
-                          </button>
-                        )}
                         <button 
                           className="icon-btn" 
                           onClick={() => openEditUserModal(u)}
@@ -1141,7 +1137,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                           >
                             {msg.fileUrl ? (
                               msg.fileType?.startsWith('image/') ? (
-                                <img src={msg.fileUrl} alt="Lossless Upload" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px' }} />
+                                <img src={msg.fileUrl} alt="Upload" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px' }} />
                               ) : msg.fileType?.startsWith('video/') ? (
                                 <div 
                                   className="attachment-video-preview-wrapper"

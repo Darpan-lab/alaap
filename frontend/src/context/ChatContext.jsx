@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { API_BASE_URL, SOCKET_URL } from '../config';
+import { IncomingCallModal } from '../components/Call/IncomingCallModal';
+import { VoiceCallRoom } from '../components/Call/VoiceCallRoom';
 
 const ChatContext = createContext(null);
 
@@ -43,6 +45,10 @@ export const ChatProvider = ({ children }) => {
   const [syncPlayVideoId, setSyncPlayVideoId] = useState('');
   const [syncPlayIsPlaying, setSyncPlayIsPlaying] = useState(false);
 
+  // Voice Call States
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [activeCall, setActiveCall] = useState(null);
+
   // Socket & Scroll Refs
   const socketRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -60,6 +66,12 @@ export const ChatProvider = ({ children }) => {
 
   const notificationSettingsRef = useRef(notificationSettings);
   useEffect(() => { notificationSettingsRef.current = notificationSettings; }, [notificationSettings]);
+
+  const activeCallRef = useRef(activeCall);
+  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+
+  const incomingCallRef = useRef(incomingCall);
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
 
   // Persist notifications & settings
   useEffect(() => {
@@ -612,6 +624,28 @@ export const ChatProvider = ({ children }) => {
       setActiveChat(updateStatus);
     });
 
+    // Voice Call Socket Handlers
+    socket.on('call:incoming', (callData) => {
+      console.log('Incoming call received:', callData);
+      setIncomingCall(callData);
+    });
+
+    socket.on('call:ended', ({ chatId }) => {
+      if (activeCallRef.current?.chatId === chatId) {
+        setActiveCall(null);
+      }
+      if (incomingCallRef.current?.chatId === chatId) {
+        setIncomingCall(null);
+      }
+    });
+
+    socket.on('call:rejected', ({ rejector }) => {
+      if (toasts) {
+        addToast({ type: 'info', message: `${rejector?.username || 'User'} declined the call.` });
+      }
+      setActiveCall(null);
+    });
+
     // Fetch initial chat lists
     fetchChats();
 
@@ -652,9 +686,148 @@ export const ChatProvider = ({ children }) => {
       handleOpenChat,
       playNotificationSound,
       triggerDesktopNotification,
-      addNotificationToHistory
+      addNotificationToHistory,
+      incomingCall,
+      activeCall,
+      startCall: async (chatId, isVideo = false) => {
+        if (!token || !chatId) return;
+        try {
+          const chat = chatsRef.current.find(c => c._id === chatId) || activeChatRef.current;
+          const chatName = chat ? (chat.isGroup ? chat.name : (chat.members?.find(m => m._id !== user?._id && m._id !== user?.id)?.username || 'Voice Call')) : 'Voice Call';
+
+          const res = await fetch(`${API_BASE_URL}/calls/token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ chatId })
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            addToast({ type: 'error', message: errData.error || 'Failed to connect voice call' });
+            return;
+          }
+          const data = await res.json();
+
+          setActiveCall({
+            chatId,
+            token: data.token,
+            url: data.url,
+            roomName: data.roomName,
+            isVideo,
+            chatName
+          });
+
+          socketRef.current?.emit('call:initiate', { chatId, isVideo });
+        } catch (err) {
+          console.error('Error starting call:', err);
+          addToast({ type: 'error', message: 'Voice call connection error' });
+        }
+      },
+      acceptCall: async () => {
+        if (!incomingCallRef.current || !token) return;
+        const callToAccept = incomingCallRef.current;
+        setIncomingCall(null);
+
+        try {
+          const res = await fetch(`${API_BASE_URL}/calls/token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ chatId: callToAccept.chatId })
+          });
+          if (!res.ok) {
+            addToast({ type: 'error', message: 'Failed to join voice call' });
+            return;
+          }
+          const data = await res.json();
+
+          const chatName = callToAccept.groupName || callToAccept.caller.username;
+          setActiveCall({
+            chatId: callToAccept.chatId,
+            token: data.token,
+            url: data.url,
+            roomName: data.roomName,
+            isVideo: callToAccept.isVideo,
+            chatName
+          });
+
+          socketRef.current?.emit('call:accept', { chatId: callToAccept.chatId });
+        } catch (err) {
+          console.error('Error accepting call:', err);
+          addToast({ type: 'error', message: 'Error joining voice call' });
+        }
+      },
+      rejectCall: () => {
+        if (!incomingCallRef.current) return;
+        socketRef.current?.emit('call:reject', {
+          chatId: incomingCallRef.current.chatId,
+          callerId: incomingCallRef.current.caller._id
+        });
+        setIncomingCall(null);
+      },
+      endCall: () => {
+        if (activeCallRef.current) {
+          socketRef.current?.emit('call:end', { chatId: activeCallRef.current.chatId });
+        }
+        setActiveCall(null);
+      }
     }}>
       {children}
+      <IncomingCallModal 
+        incomingCall={incomingCall} 
+        onAccept={() => {
+          if (!incomingCallRef.current || !token) return;
+          const callToAccept = incomingCallRef.current;
+          setIncomingCall(null);
+
+          fetch(`${API_BASE_URL}/calls/token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ chatId: callToAccept.chatId })
+          })
+          .then(res => res.json())
+          .then(data => {
+            const chatName = callToAccept.groupName || callToAccept.caller.username;
+            setActiveCall({
+              chatId: callToAccept.chatId,
+              token: data.token,
+              url: data.url,
+              roomName: data.roomName,
+              isVideo: callToAccept.isVideo,
+              chatName
+            });
+            socketRef.current?.emit('call:accept', { chatId: callToAccept.chatId });
+          })
+          .catch(err => {
+            console.error('Error accepting call:', err);
+            addToast({ type: 'error', message: 'Error joining voice call' });
+          });
+        }} 
+        onReject={() => {
+          if (!incomingCallRef.current) return;
+          socketRef.current?.emit('call:reject', {
+            chatId: incomingCallRef.current.chatId,
+            callerId: incomingCallRef.current.caller._id
+          });
+          setIncomingCall(null);
+        }} 
+      />
+      <VoiceCallRoom 
+        activeCall={activeCall} 
+        onLeave={() => {
+          if (activeCallRef.current) {
+            socketRef.current?.emit('call:end', { chatId: activeCallRef.current.chatId });
+          }
+          setActiveCall(null);
+        }} 
+      />
     </ChatContext.Provider>
   );
 };

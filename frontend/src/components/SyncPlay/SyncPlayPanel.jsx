@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Tv, ArrowLeftRight, Play, Pause } from 'lucide-react';
+import { Tv, ArrowLeftRight, Play, Pause, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useDialog } from '../../context/DialogContext';
@@ -31,6 +31,11 @@ export function SyncPlayPanel({
   const ytPlayerReadyRef = useRef(false);
   const ignorePlayerStateChangeRef = useRef(false);
   
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [bufferedFraction, setBufferedFraction] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
   const activeChatRef = useRef(activeChat);
   useEffect(() => {
     activeChatRef.current = activeChat;
@@ -119,7 +124,7 @@ export function SyncPlayPanel({
               if (ignorePlayerStateChangeRef.current) return;
 
               const state = event.data;
-              const currentTime = event.target.getCurrentTime();
+              const cTime = event.target.getCurrentTime();
               const currentActiveChat = activeChatRef.current;
               if (!currentActiveChat) return;
 
@@ -128,7 +133,7 @@ export function SyncPlayPanel({
                   chatId: currentActiveChat._id,
                   videoId: syncPlayVideoId,
                   action: 'play',
-                  currentTime,
+                  currentTime: cTime,
                   isPlaying: true
                 });
               } else if (state === 2) { // PAUSED
@@ -136,7 +141,7 @@ export function SyncPlayPanel({
                   chatId: currentActiveChat._id,
                   videoId: syncPlayVideoId,
                   action: 'pause',
-                  currentTime,
+                  currentTime: cTime,
                   isPlaying: false
                 });
               }
@@ -172,6 +177,21 @@ export function SyncPlayPanel({
       window.ignorePlayerStateChangeRef = null;
     };
   }, []);
+
+  // Update progress bar periodically
+  useEffect(() => {
+    let interval;
+    if (syncPlayActive) {
+      interval = setInterval(() => {
+        if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function' && !isDragging) {
+          setCurrentTime(ytPlayerRef.current.getCurrentTime() || 0);
+          setDuration(ytPlayerRef.current.getDuration() || 0);
+          setBufferedFraction(ytPlayerRef.current.getVideoLoadedFraction() || 0);
+        }
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [syncPlayActive, isDragging]);
 
   const handleEndSyncPlayGroup = async () => {
     if (!activeChat) return;
@@ -218,12 +238,12 @@ export function SyncPlayPanel({
   const handlePlayerPlayPause = () => {
     if (ytPlayerRef.current && ytPlayerReadyRef.current) {
       const isPlaying = ytPlayerRef.current.getPlayerState() === 1;
-      const currentTime = ytPlayerRef.current.getCurrentTime();
+      const cTime = ytPlayerRef.current.getCurrentTime();
       socket?.emit('sync_play_update', {
         chatId: activeChat._id,
         videoId: syncPlayVideoId,
         action: isPlaying ? 'pause' : 'play',
-        currentTime,
+        currentTime: cTime,
         isPlaying: !isPlaying
       });
 
@@ -243,17 +263,17 @@ export function SyncPlayPanel({
 
   const handleSkipTime = (amount) => {
     if (ytPlayerRef.current && ytPlayerReadyRef.current) {
-      const currentTime = ytPlayerRef.current.getCurrentTime() + amount;
+      const cTime = ytPlayerRef.current.getCurrentTime() + amount;
       socket?.emit('sync_play_update', {
         chatId: activeChat._id,
         videoId: syncPlayVideoId,
         action: 'seek',
-        currentTime,
+        currentTime: cTime,
         isPlaying: syncPlayIsPlaying
       });
 
       ignorePlayerStateChangeRef.current = true;
-      ytPlayerRef.current.seekTo(currentTime, true);
+      ytPlayerRef.current.seekTo(cTime, true);
       setTimeout(() => {
         ignorePlayerStateChangeRef.current = false;
       }, 600);
@@ -268,9 +288,9 @@ export function SyncPlayPanel({
       if (response.ok) {
         const chatData = await response.json();
         if (chatData.syncPlay && chatData.syncPlay.active) {
-          const { currentTime, isPlaying, lastUpdatedAt, videoId } = chatData.syncPlay;
+          const { currentTime: dbTime, isPlaying, lastUpdatedAt, videoId } = chatData.syncPlay;
           
-          let targetTime = currentTime || 0;
+          let targetTime = dbTime || 0;
           if (isPlaying && lastUpdatedAt) {
             const elapsed = (Date.now() - new Date(lastUpdatedAt).getTime()) / 1000;
             targetTime += elapsed;
@@ -305,7 +325,44 @@ export function SyncPlayPanel({
     }
   };
 
+  const handleSliderChange = (e) => {
+    setCurrentTime(parseFloat(e.target.value));
+  };
+
+  const handleSliderMouseDown = () => {
+    setIsDragging(true);
+  };
+
+  const handleSliderMouseUp = (e) => {
+    setIsDragging(false);
+    const newTime = parseFloat(e.target.value);
+    if (ytPlayerRef.current && ytPlayerReadyRef.current) {
+      socket?.emit('sync_play_update', {
+        chatId: activeChat._id,
+        videoId: syncPlayVideoId,
+        action: 'seek',
+        currentTime: newTime,
+        isPlaying: syncPlayIsPlaying
+      });
+      ignorePlayerStateChangeRef.current = true;
+      ytPlayerRef.current.seekTo(newTime, true);
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 600);
+    }
+  };
+
+  const formatTime = (secs) => {
+    if (isNaN(secs) || !isFinite(secs)) return '00:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   if (!syncPlayActive) return null;
+
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const bufferedPercent = bufferedFraction * 100;
 
   return (
     <>
@@ -359,13 +416,48 @@ export function SyncPlayPanel({
             <div id="sync-play-yt-player"></div>
           </div>
 
-          <div className="sync-play-controls border-t">
-            <div style={{ position: 'relative', width: '100%', marginBottom: '16px', display: 'flex', alignItems: 'center' }}>
+          <div className="sync-play-controls border-t" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            {/* Custom Progress / Buffering Bar */}
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '40px', textAlign: 'right' }}>
+                {formatTime(currentTime)}
+              </span>
+              <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input 
+                  type="range"
+                  min="0"
+                  max={duration || 100}
+                  value={currentTime}
+                  onChange={handleSliderChange}
+                  onMouseDown={handleSliderMouseDown}
+                  onMouseUp={handleSliderMouseUp}
+                  onTouchStart={handleSliderMouseDown}
+                  onTouchEnd={handleSliderMouseUp}
+                  className="sync-play-progress-slider"
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
+                    borderRadius: '3px',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '40px' }}>
+                {formatTime(duration)}
+              </span>
+            </div>
+
+            <div style={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center' }}>
               <input 
                 type="text"
                 placeholder="Paste video link..."
                 className="sync-play-url-input"
-                style={{ width: '100%', paddingRight: '75px' }}
+                style={{ width: '100%', paddingRight: '50px' }}
                 value={syncPlayInputUrl}
                 onChange={(e) => setSyncPlayInputUrl(e.target.value)}
                 onKeyDown={(e) => {
@@ -377,16 +469,19 @@ export function SyncPlayPanel({
                 className="btn btn-primary btn-sm"
                 style={{
                   position: 'absolute',
-                  right: '5px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  padding: '5px 14px',
-                  fontSize: '13px',
-                  height: 'calc(100% - 10px)'
+                  right: '0',
+                  top: '0',
+                  padding: '0 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  borderRadius: '0 var(--radius-sm) var(--radius-sm) 0'
                 }}
                 onClick={() => handleChangeVideo(syncPlayInputUrl)}
+                title="Load Video"
               >
-                Load
+                <ArrowRight size={16} />
               </button>
             </div>
 
@@ -435,3 +530,4 @@ export function SyncPlayPanel({
 }
 
 export default SyncPlayPanel;
+

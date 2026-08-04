@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'Alaap - Lossless Premium Messenger',
+        name: 'Alaap Messenger',
         short_name: 'Alaap',
-        description: 'Lossless Premium Messenger with high fidelity real-time communication',
+        description: 'Alaap real-time communication messenger',
         theme_color: '#0b0c10',
         background_color: '#0b0c10',
         display: 'standalone',
@@ -45,7 +45,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        cacheId: 'alaap-pwa-v1.1.5',
+        cacheId: 'alaap-pwa-v1.1.15',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [/^\/api/, /^\/socket\.io/, /^\/uploads/],
         cleanupOutdatedCaches: true,
@@ -54,6 +54,29 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('livekit')) {
+              return 'vendor-livekit';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-lucide';
+            }
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('socket.io')) {
+              return 'vendor-socket';
+            }
+          }
+        }
+      }
+    }
+  },
   server: {
     allowedHosts: ['alaap.darpannest.online'],
     proxy: {
