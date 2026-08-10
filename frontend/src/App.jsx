@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 import { 
   MessageSquare, Send, Image, Video, User, Plus, Search, LogOut, 
@@ -746,6 +746,9 @@ function App() {
   const [chats, setChats] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
+  const messageInputRef = useRef(null);
+  const [mentionDropdownVisible, setMentionDropdownVisible] = useState(false);
+  const [mentionSearchQuery, setMentionSearchQuery] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
   const [activeDropdownMessageId, setActiveDropdownMessageId] = useState(null);
   
@@ -1006,12 +1009,14 @@ function App() {
     const chatName = chat ? (chat.isGroup ? chat.name : senderUsername) : senderUsername;
     const title = chat?.isGroup ? `${chatName} (${senderUsername})` : senderUsername;
     const contentText = message.content || (message.fileUrl ? '📁 Attachment' : 'New message');
+    const isMention = user && message.content && new RegExp(`@${user.username}\\b`, 'i').test(message.content);
     
     addNotificationToHistory({
       type: 'message',
       title: chatName,
       message: `${senderUsername}: ${contentText}`,
-      chatId: message.chat
+      chatId: message.chat,
+      isMention: isMention
     });
 
     if (config.inAppBannerEnabled) {
@@ -1019,6 +1024,7 @@ function App() {
         title: chatName,
         message: `${senderUsername}: ${contentText}`,
         avatar: message.sender?.profilePic || '',
+        isMention: isMention,
         onClick: () => {
           const targetChat = chatsRef.current.find(c => c._id === message.chat);
           if (targetChat) setActiveChat(targetChat);
@@ -2107,7 +2113,39 @@ function App() {
           );
         }
       }
-      return part;
+      
+      const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
+      const textParts = part.split(mentionRegex);
+      return textParts.map((tPart, j) => {
+        if (tPart.match(mentionRegex)) {
+          const uname = tPart.substring(1);
+          const isValidMention = activeChat?.members?.some(m => m.username.toLowerCase() === uname.toLowerCase());
+          if (!isValidMention) return tPart;
+          
+          const senderUname = msg.sender?.username || (typeof msg.sender === 'string' ? '' : msg.sender?.username);
+          const isSelfMention = senderUname && senderUname.toLowerCase() === uname.toLowerCase();
+          if (isSelfMention) return tPart;
+          
+          const isMe = user?.username?.toLowerCase() === uname.toLowerCase();
+          return (
+            <span 
+              key={`${i}-${j}`} 
+              style={{
+                color: isMe ? '#eab308' : '#38bdf8',
+                fontWeight: '600',
+                background: isMe ? 'rgba(234, 179, 8, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                padding: '0 4px',
+                borderRadius: '4px',
+                marginLeft: '1px',
+                marginRight: '1px'
+              }}
+            >
+              {tPart}
+            </span>
+          );
+        }
+        return tPart;
+      });
     });
   };
 
@@ -2462,9 +2500,11 @@ function App() {
         });
         scrollToBottom();
 
-        // Trigger notifications if tab is hidden (and sender is not current user)
         const isSelf = message.sender && (message.sender._id === user?.id || message.sender._id === user?._id);
-        if (document.hidden && !isSelf) {
+        const currentUsername = user?.username || '';
+        const isMention = currentUsername && message.content && new RegExp(`@${currentUsername}\\b`, 'i').test(message.content);
+        
+        if ((document.hidden || isMention) && !isSelf) {
           triggerNotificationAlert(activeChatRef.current, message);
         }
       }
@@ -3378,7 +3418,78 @@ function App() {
     }
   };
 
+  const messageReadReceipts = useMemo(() => {
+    if (!activeChat || !activeChat.isGroup) return {};
+    
+    const receipts = {};
+    const foundUsers = new Set();
+    const currentId = user?.id || user?._id;
+    if (currentId) foundUsers.add(currentId.toString());
+    
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.readBy) continue;
+      
+      const readers = [];
+      msg.readBy.forEach(r => {
+        const rId = (r._id || r).toString();
+        if (!foundUsers.has(rId)) {
+          const member = activeChat.members?.find(m => m._id.toString() === rId);
+          if (member) {
+            readers.push(member);
+            foundUsers.add(rId);
+          }
+        }
+      });
+      
+      if (readers.length > 0) {
+        receipts[msg._id] = readers;
+      }
+      
+      if (activeChat.members && foundUsers.size >= activeChat.members.length) break;
+    }
+    return receipts;
+  }, [messages, activeChat, user]);
+
+  const handleMessageInputChange = (e) => {
+    const val = e.target.value;
+    setMessageInput(val);
+    handleTyping();
+    
+    const cursorPosition = e.target.selectionStart;
+    const textBeforeCursor = val.slice(0, cursorPosition);
+    const match = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/);
+    
+    if (match) {
+      setMentionDropdownVisible(true);
+      setMentionSearchQuery(match[1]);
+    } else {
+      setMentionDropdownVisible(false);
+    }
+  };
+
+  const handleMentionSelect = (username) => {
+    const cursorPosition = messageInputRef.current?.selectionStart || messageInput.length;
+    const textBeforeCursor = messageInput.slice(0, cursorPosition);
+    const textAfterCursor = messageInput.slice(cursorPosition);
+    
+    const textBeforeMention = textBeforeCursor.replace(/@[a-zA-Z0-9_]*$/, '');
+    const newText = `${textBeforeMention}@${username} ${textAfterCursor}`;
+    
+    setMessageInput(newText);
+    setMentionDropdownVisible(false);
+    
+    setTimeout(() => {
+      if (messageInputRef.current) {
+        messageInputRef.current.focus();
+        const newCursorPos = textBeforeMention.length + username.length + 2;
+        messageInputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
   const handleSendMessage = (e) => {
+    if (mentionDropdownVisible) setMentionDropdownVisible(false);
     e?.preventDefault();
     if ((!messageInput.trim() && !pendingAttachment) || !activeChat) return;
 
@@ -5122,8 +5233,12 @@ function App() {
                           borderRadius: 'var(--radius-sm)',
                           cursor: 'pointer',
                           marginBottom: '8px',
-                          background: n.read ? 'rgba(255,255,255,0.02)' : 'rgba(99, 102, 241, 0.08)',
-                          border: n.read ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(99, 102, 241, 0.15)',
+                          background: n.isMention 
+                            ? 'rgba(234, 179, 8, 0.15)' 
+                            : (n.read ? 'rgba(255,255,255,0.02)' : 'rgba(99, 102, 241, 0.08)'),
+                          border: n.isMention 
+                            ? '1px solid rgba(234, 179, 8, 0.3)' 
+                            : (n.read ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(99, 102, 241, 0.15)'),
                           transition: 'all 0.2s'
                         }}
                         onClick={() => {
@@ -5313,15 +5428,22 @@ function App() {
                           {typerNames.length > 0 ? (
                             <span className="typing-preview">{typerNames.join(', ')} typing...</span>
                           ) : chat.latestMessage ? (
-                            <span className="last-msg-text">
-                              {chat.latestMessage.sender && typeof chat.latestMessage.sender === 'object' ? (
-                                (chat.latestMessage.sender._id === user?.id || chat.latestMessage.sender._id === user?._id) ? 'You: ' : `${chat.latestMessage.sender.username}: `
-                              ) : (
-                                chat.latestMessage.sender === null ? 'Deleted User: ' : ''
+                            <span className="last-msg-text" style={{ display: 'flex', alignItems: 'center' }}>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {chat.latestMessage.sender && typeof chat.latestMessage.sender === 'object' ? (
+                                  (chat.latestMessage.sender._id === user?.id || chat.latestMessage.sender._id === user?._id) ? 'You: ' : `${chat.latestMessage.sender.username}: `
+                                ) : (
+                                  chat.latestMessage.sender === null ? 'Deleted User: ' : ''
+                                )}
+                                {chat.latestMessage.fileUrl ? 
+                                  (chat.latestMessage.fileType?.startsWith('audio/') ? `🎤 Voice Message` : `📎 ${chat.latestMessage.fileName}`) 
+                                  : chat.latestMessage.content}
+                              </span>
+                              {user && chat.latestMessage.content && new RegExp(`@${user.username}\\b`, 'i').test(chat.latestMessage.content) && (
+                                <span style={{ fontSize: '0.65rem', color: '#eab308', marginLeft: '6px', border: '1px solid #eab308', padding: '1px 4px', borderRadius: '4px', flexShrink: 0 }}>
+                                  {(chat.latestMessage.sender?.username || 'Someone')} mentioned you
+                                </span>
                               )}
-                              {chat.latestMessage.fileUrl ? 
-                                (chat.latestMessage.fileType?.startsWith('audio/') ? `🎤 Voice Message` : `📎 ${chat.latestMessage.fileName}`) 
-                                : chat.latestMessage.content}
                             </span>
                           ) : (
                             <span className="no-msgs">No messages yet</span>
@@ -5739,6 +5861,27 @@ function App() {
                             }
                           })()}
                         </span>
+
+                        {activeChat?.isGroup && messageReadReceipts[msg._id] && (
+                          <div className="message-read-receipts" style={{
+                            display: 'flex', 
+                            justifyContent: isOwn ? 'flex-end' : 'flex-start',
+                            marginTop: '2px',
+                            gap: '2px'
+                          }}>
+                            {messageReadReceipts[msg._id].map(member => (
+                              <div key={member._id} title={`Read by ${member.username}`} style={{ position: 'relative' }}>
+                                {member.profilePic ? (
+                                  <img src={member.profilePic} alt={member.username} style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--background)' }} />
+                                ) : (
+                                  <div style={{ width: '14px', height: '14px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', fontWeight: 'bold', border: '1px solid var(--background)' }}>
+                                    {member.username.substring(0,2).toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Hover Action Menu */}
@@ -6083,16 +6226,63 @@ function App() {
                               </div>
                             )}
                           </div>
+                          
+                          {mentionDropdownVisible && activeChat?.members && (
+                            <div className="mention-dropdown popup-glass animate-fade-in" style={{
+                              position: 'absolute',
+                              bottom: 'calc(100% + 10px)',
+                              left: '20px',
+                              maxHeight: '200px',
+                              overflowY: 'auto',
+                              width: '250px',
+                              zIndex: 50,
+                              background: 'var(--glass-bg)',
+                              border: '1px solid var(--glass-border)',
+                              borderRadius: 'var(--radius-md)',
+                              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
+                              backdropFilter: 'blur(10px)',
+                              display: 'flex',
+                              flexDirection: 'column'
+                            }}>
+                              {activeChat.members
+                                .filter(m => (m._id !== user?.id && m._id !== user?._id) && m.username.toLowerCase().includes(mentionSearchQuery.toLowerCase()))
+                                .map((m, idx, arr) => (
+                                  <div 
+                                    key={m._id} 
+                                    className="hover-item"
+                                    style={{
+                                      padding: '8px 12px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      cursor: 'pointer',
+                                      borderBottom: idx !== arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'
+                                    }}
+                                    onClick={() => handleMentionSelect(m.username)}
+                                  >
+                                    {m.profilePic ? (
+                                      <img src={m.profilePic} alt={m.username} style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    ) : (
+                                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold' }}>
+                                        {m.username.substring(0,2).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <span style={{ fontSize: '0.9rem' }}>{m.username}</span>
+                                  </div>
+                              ))}
+                              {activeChat.members.filter(m => (m._id !== user?.id && m._id !== user?._id) && m.username.toLowerCase().includes(mentionSearchQuery.toLowerCase())).length === 0 && (
+                                <div style={{ padding: '12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>No users found</div>
+                              )}
+                            </div>
+                          )}
 
                           <input 
+                            ref={messageInputRef}
                             type="text" 
                             placeholder="Say something to Alaap..." 
                             className="chat-text-input-inside" 
                             value={messageInput}
-                            onChange={(e) => {
-                              setMessageInput(e.target.value);
-                              handleTyping();
-                            }}
+                            onChange={handleMessageInputChange}
                             onPaste={handlePaste}
                           />
 
@@ -8500,8 +8690,8 @@ function App() {
               alignItems: 'center',
               gap: '12px',
               padding: '12px 16px',
-              background: 'rgba(15, 17, 26, 0.9)',
-              border: '1px solid var(--glass-border)',
+              background: toast.isMention ? 'rgba(35, 25, 0, 0.95)' : 'rgba(15, 17, 26, 0.9)',
+              border: toast.isMention ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid var(--glass-border)',
               borderRadius: 'var(--radius-md)',
               boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
               cursor: 'pointer',
