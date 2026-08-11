@@ -2927,6 +2927,10 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.sync-play-load-btn:hover {
+  transform: none !important;
+}
+
 /* Lightbox Image Scale Up Animation */
 @keyframes scaleUpImage {
   from {

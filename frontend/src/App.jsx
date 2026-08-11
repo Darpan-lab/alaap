@@ -7432,7 +7432,7 @@ function App() {
                         />
                         <button 
                           type="button"
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-primary btn-sm sync-play-load-btn"
                           style={{
                             position: 'absolute',
                             right: '0',
