@@ -5,28 +5,27 @@ Wants=mongodb.service mongod.service
 
 [Service]
 Type=simple
-# Replace 'darpanserver' with your Linux username or system user (e.g., www-data or root)
-User=darpanserver
-Group=darpanserver
+# System user account running the process (e.g. ubuntu, deploy, www-data)
+User=your_system_user
+Group=your_system_user
 
 # Absolute path to your backend directory
-WorkingDirectory=/home/darpanserver/alaap/backend
+WorkingDirectory=/path/to/alaap/backend
 
-# Path to node executable (find yours with 'which node')
+# Path to node executable (find yours using 'which node')
 ExecStart=/usr/bin/node src/server.js
 
-# Restart policy: automatically restart service if it crashes
+# Automatic restart policy on crash
 Restart=always
 RestartSec=5
 
-# Path to environment file
-EnvironmentFile=/home/darpanserver/alaap/backend/.env
+# Absolute path to backend environment file
+EnvironmentFile=/path/to/alaap/backend/.env
 
-# Logging settings (view logs with: journalctl -u alaap -f)
+# Standard output and error logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=alaap
 
 [Install]
 WantedBy=multi-user.target
-

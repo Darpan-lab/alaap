@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useDialog } from '../../context/DialogContext';
 import { API_BASE_URL } from '../../config';
+import { SyncPlayProgressDashboard } from './SyncPlayProgressDashboard';
 
 export function SyncPlayPanel({ 
   width, 
@@ -412,8 +413,22 @@ export function SyncPlayPanel({
         </div>
 
         <div className="sync-play-content">
-          <div className="yt-player-container">
+          <div className="yt-player-container" style={{ position: 'relative' }}>
             <div id="sync-play-yt-player"></div>
+            {activeChat?.syncPlay && (activeChat.syncPlay.downloadStatus === 'downloading' || activeChat.syncPlay.downloadStatus === 'failed') && (
+              <SyncPlayProgressDashboard 
+                status={activeChat.syncPlay.downloadStatus}
+                progress={activeChat.syncPlay.downloadProgress || 0}
+                stage={activeChat.syncPlay.downloadStage || 'metadata'}
+                stageName={activeChat.syncPlay.downloadStage ? activeChat.syncPlay.downloadStage.toUpperCase() : 'Extracting Video Metadata'}
+                speed={activeChat.syncPlay.downloadSpeed || ''}
+                eta={activeChat.syncPlay.downloadEta || ''}
+                downloadedSize={activeChat.syncPlay.downloadedSize || ''}
+                totalSize={activeChat.syncPlay.totalSize || ''}
+                error={activeChat.syncPlay.downloadError || ''}
+                onRetry={() => handleChangeVideo(syncPlayVideoId)}
+              />
+            )}
           </div>
 
           <div className="sync-play-controls border-t" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>

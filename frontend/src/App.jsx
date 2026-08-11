@@ -11,6 +11,7 @@ import { API_BASE_URL, SOCKET_URL } from './config';
 import { formatBDMessageTime, formatBDTimeOnly } from './utils/dateUtils';
 import AudioMessagePlayer from './components/Media/AudioMessagePlayer';
 import { JellyfinModal, JellyfinLogo } from './components/SyncPlay/JellyfinModal';
+import { SyncPlayProgressDashboard } from './components/SyncPlay/SyncPlayProgressDashboard';
 import { VoiceCallRoom } from './components/Call/VoiceCallRoom';
 import './App.css';
 
@@ -1572,6 +1573,14 @@ function App() {
   const [syncPlayDownloadStatus, setSyncPlayDownloadStatus] = useState('idle');
   const [syncPlayDownloadProgress, setSyncPlayDownloadProgress] = useState(0);
   const [syncPlayDownloadError, setSyncPlayDownloadError] = useState('');
+  const [syncPlayDownloadDetails, setSyncPlayDownloadDetails] = useState({
+    stage: 'metadata',
+    stageName: 'Extracting Video Metadata',
+    speed: '',
+    eta: '',
+    downloadedSize: '',
+    totalSize: ''
+  });
   const videoPlayerRef = useRef(null);
   const [syncPlayIsPlaying, setSyncPlayIsPlaying] = useState(false);
   const syncPlayIsPlayingRef = useRef(syncPlayIsPlaying);
@@ -2782,6 +2791,7 @@ function App() {
         }
         if (blockActive) return;
 
+        setSyncPlayActive(true);
         setSyncPlayVideoId(videoId);
         setSyncPlayVideoUrl(videoUrl || '');
         setSyncPlayDownloadStatus(downloadStatus || 'idle');
@@ -2923,11 +2933,23 @@ function App() {
       }));
     });
 
-    socket.on('sync_play_download_progress', ({ chatId, status, progress, error }) => {
+    socket.on('sync_play_download_progress', ({ chatId, status, progress, stage, stageName, speed, eta, downloadedSize, totalSize, error }) => {
       if (activeChatRef.current && activeChatRef.current._id === chatId) {
+        if (status === 'downloading' || status === 'processing') {
+          setSyncPlayActive(true);
+        }
         setSyncPlayDownloadStatus(status);
         setSyncPlayDownloadProgress(progress);
         if (error) setSyncPlayDownloadError(error);
+        
+        setSyncPlayDownloadDetails(prev => ({
+          stage: stage || prev.stage || 'metadata',
+          stageName: stageName || prev.stageName || 'Extracting Metadata & Options',
+          speed: speed !== undefined ? speed : prev.speed,
+          eta: eta !== undefined ? eta : prev.eta,
+          downloadedSize: downloadedSize !== undefined ? downloadedSize : prev.downloadedSize,
+          totalSize: totalSize !== undefined ? totalSize : prev.totalSize
+        }));
       }
       
       const updateDownloadState = (prev) => {
@@ -7378,61 +7400,19 @@ function App() {
                       </div>
                     )}
 
-                    {syncPlayDownloadStatus === 'downloading' && (
-                      <div className="download-status-overlay" style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(0,0,0,0.85)',
-                        color: '#fff',
-                        padding: '20px',
-                        textAlign: 'center',
-                        zIndex: 10
-                      }}>
-                        <h4 style={{ margin: '0 0 8px 0', color: 'var(--primary)' }}>Downloading Video to Server...</h4>
-                        <div style={{ width: '80%', maxWidth: '300px', height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
-                          <div style={{ width: `${syncPlayDownloadProgress}%`, height: '100%', background: 'var(--primary)', transition: 'width 0.3s ease' }}></div>
-                        </div>
-                        <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{Math.round(syncPlayDownloadProgress)}% completed</span>
-                        <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', margin: '8px 0 0 0' }}>The video will automatically start playing once the download completes.</p>
-                      </div>
-                    )}
-
-                    {syncPlayDownloadStatus === 'failed' && (
-                      <div className="download-status-overlay" style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(0,0,0,0.85)',
-                        color: '#fff',
-                        padding: '20px',
-                        textAlign: 'center',
-                        zIndex: 10
-                      }}>
-                        <h4 style={{ margin: '0 0 8px 0', color: '#ff4d4f' }}>Download Failed</h4>
-                        <p style={{ fontSize: '13px', maxWidth: '300px', color: 'rgba(255,255,255,0.8)', margin: '0 0 16px 0' }}>
-                          {syncPlayDownloadError || 'An unknown error occurred during download.'}
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleChangeVideo(syncPlayVideoId)}
-                        >
-                          Retry Download 🔄
-                        </button>
-                      </div>
+                    {(syncPlayDownloadStatus === 'downloading' || syncPlayDownloadStatus === 'failed') && (
+                      <SyncPlayProgressDashboard 
+                        status={syncPlayDownloadStatus}
+                        progress={syncPlayDownloadProgress}
+                        stage={syncPlayDownloadDetails.stage}
+                        stageName={syncPlayDownloadDetails.stageName}
+                        speed={syncPlayDownloadDetails.speed}
+                        eta={syncPlayDownloadDetails.eta}
+                        downloadedSize={syncPlayDownloadDetails.downloadedSize}
+                        totalSize={syncPlayDownloadDetails.totalSize}
+                        error={syncPlayDownloadError}
+                        onRetry={() => handleChangeVideo(syncPlayVideoId)}
+                      />
                     )}
                   </div>
 

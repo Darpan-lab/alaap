@@ -60,6 +60,26 @@ const chatSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
+    downloadStage: {
+      type: String,
+      default: 'metadata'
+    },
+    downloadSpeed: {
+      type: String,
+      default: ''
+    },
+    downloadEta: {
+      type: String,
+      default: ''
+    },
+    downloadedSize: {
+      type: String,
+      default: ''
+    },
+    totalSize: {
+      type: String,
+      default: ''
+    },
     currentTime: {
       type: Number,
       default: 0

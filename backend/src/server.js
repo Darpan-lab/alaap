@@ -382,17 +382,41 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
     
     io.to(chatId).emit('sync_play_download_progress', {
       chatId,
-      status: 'downloading',
-      progress: download.progress
+      status: download.status || 'downloading',
+      progress: download.progress || 0,
+      stage: download.stage || 'metadata',
+      stageName: download.stageName || 'Extracting Video Metadata',
+      speed: download.speed || '',
+      eta: download.eta || '',
+      downloadedSize: download.downloadedSize || '',
+      totalSize: download.totalSize || ''
     });
     return;
   }
   
   const downloadInfo = {
     progress: 0,
+    status: 'downloading',
+    stage: 'metadata',
+    stageName: 'Extracting Video Metadata',
+    speed: '',
+    eta: '',
+    downloadedSize: '',
+    totalSize: '',
     chatIds: new Set([chatId])
   };
   activeDownloads.set(videoKey, downloadInfo);
+
+  broadcastToChats(downloadInfo.chatIds, io, 'sync_play_download_progress', {
+    status: 'downloading',
+    progress: 0,
+    stage: 'metadata',
+    stageName: 'Extracting Video Metadata',
+    speed: '',
+    eta: '',
+    downloadedSize: '',
+    totalSize: ''
+  });
   
   const binary = getYtdlpBinary();
   const args = getYtdlpDownloadArgs(downloadUrl, outputFilePath);
@@ -402,28 +426,70 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
   const child = spawn(binary, args);
   let buffer = '';
   
+  const parseLineAndEmit = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    
+    if (/\[(youtube|info|ExtractAudio)\]/i.test(trimmed) || /Extracting URL/i.test(trimmed) || /Downloading webpage/i.test(trimmed)) {
+      downloadInfo.stage = 'metadata';
+      downloadInfo.stageName = 'Extracting Metadata & Resolving Stream';
+    } else if (/\[Merger\]|\[ffmpeg\]|\[VideoConvertor\]|\[FixupM3u8\]|\[Metadata\]/i.test(trimmed) || /Merging formats/i.test(trimmed)) {
+      downloadInfo.stage = 'processing';
+      downloadInfo.stageName = 'Merging & Remuxing Video/Audio';
+    } else if (trimmed.includes('[download]')) {
+      downloadInfo.stage = 'downloading';
+      downloadInfo.stageName = 'Downloading Video & Audio Streams';
+      
+      const progMatch = trimmed.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+      if (progMatch) {
+        downloadInfo.progress = parseFloat(progMatch[1]);
+      }
+      
+      const totalMatch = trimmed.match(/of\s+~?\s*(\d+(?:\.\d+)?[KiMGTP]?i?B)/i);
+      if (totalMatch) {
+        downloadInfo.totalSize = totalMatch[1];
+      }
+      
+      const speedMatch = trimmed.match(/at\s+(\d+(?:\.\d+)?[KiMGTP]?i?B\/s|Unknown speed|--\/s)/i);
+      if (speedMatch) {
+        downloadInfo.speed = speedMatch[1];
+      }
+      
+      const etaMatch = trimmed.match(/ETA\s+(\d+:\d+(?::\d+)?|Unknown)/i);
+      if (etaMatch) {
+        downloadInfo.eta = etaMatch[1];
+      }
+    }
+
+    broadcastToChats(downloadInfo.chatIds, io, 'sync_play_download_progress', {
+      status: 'downloading',
+      progress: downloadInfo.progress,
+      stage: downloadInfo.stage,
+      stageName: downloadInfo.stageName,
+      speed: downloadInfo.speed,
+      eta: downloadInfo.eta,
+      downloadedSize: downloadInfo.downloadedSize,
+      totalSize: downloadInfo.totalSize
+    });
+  };
+
   child.stdout.on('data', (chunk) => {
     buffer += chunk.toString();
     const lines = buffer.split(/[\r\n]+/);
     buffer = lines.pop();
     
     for (const line of lines) {
-      const match = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
-      if (match) {
-        const progress = parseFloat(match[1]);
-        if (progress > downloadInfo.progress) {
-          downloadInfo.progress = progress;
-          broadcastToChats(downloadInfo.chatIds, io, 'sync_play_download_progress', {
-            status: 'downloading',
-            progress
-          });
-        }
-      }
+      parseLineAndEmit(line);
     }
   });
   
   child.stderr.on('data', (data) => {
-    console.error(`yt-dlp stderr [${videoKey}]:`, data.toString());
+    const errText = data.toString();
+    console.error(`yt-dlp stderr [${videoKey}]:`, errText);
+    const errLines = errText.split(/[\r\n]+/);
+    for (const eline of errLines) {
+      if (eline.trim()) parseLineAndEmit(eline);
+    }
   });
   
   child.on('close', async (code) => {
@@ -1044,6 +1110,23 @@ io.on('connection', async (socket) => {
             history: savedHistory
           };
           await chat.save();
+
+          io.to(chatId).emit('sync_play_broadcast', {
+            chatId,
+            videoId: chat.syncPlay.videoId,
+            videoTitle: chat.syncPlay.videoTitle,
+            videoUrl: '',
+            downloadStatus: 'downloading',
+            downloadProgress: 0,
+            downloadError: '',
+            action: 'change_video',
+            currentTime: 0,
+            durationSec: chat.syncPlay.durationSec,
+            isPlaying: false,
+            senderId: userId,
+            senderName: socket.user.username,
+            history: chat.syncPlay.history
+          });
 
           startVideoDownload(chatId, targetVideoId, io, userId, socket.user.username);
           return;
