@@ -1,21 +1,32 @@
 [Unit]
 Description=Alaap Chat Application Service
-After=network.target docker.service
+After=network.target mongodb.service mongod.service docker.service
+Wants=mongodb.service mongod.service
 
 [Service]
 Type=simple
+# Replace 'darpanserver' with your Linux username or system user (e.g., www-data or root)
 User=darpanserver
 Group=darpanserver
+
+# Absolute path to your backend directory
 WorkingDirectory=/home/darpanserver/alaap/backend
+
+# Path to node executable (find yours with 'which node')
 ExecStart=/usr/bin/node src/server.js
+
+# Restart policy: automatically restart service if it crashes
 Restart=always
 RestartSec=5
+
+# Path to environment file
 EnvironmentFile=/home/darpanserver/alaap/backend/.env
 
-# Standard output/error logging
+# Logging settings (view logs with: journalctl -u alaap -f)
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=alaap
 
 [Install]
 WantedBy=multi-user.target
+
