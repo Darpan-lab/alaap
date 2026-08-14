@@ -6838,8 +6838,14 @@ function App() {
                           src={`${API_BASE_URL.replace('/api', '')}${syncPlayVideoUrl}`}
                           crossOrigin="anonymous"
                           style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
-                          onPlay={handleVideoPlay}
-                          onPause={handleVideoPause}
+                          onPlay={() => {
+                            lastPlayPauseTimeRef.current = Date.now();
+                            setSyncLagSec(0);
+                          }}
+                          onPause={() => {
+                            lastPlayPauseTimeRef.current = Date.now();
+                            setSyncLagSec(0);
+                          }}
                           onSeeking={() => {
                             lastSeekTimeRef.current = Date.now();
                             ignorePlayerStateChangeRef.current = true;
