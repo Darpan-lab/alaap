@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Tv, ArrowLeftRight, Play, Pause, ArrowRight } from 'lucide-react';
+import { Tv, ArrowLeftRight, Play, Pause, ArrowRight, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useDialog } from '../../context/DialogContext';
@@ -36,6 +36,8 @@ export function SyncPlayPanel({
   const [duration, setDuration] = useState(0);
   const [bufferedFraction, setBufferedFraction] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [syncLagSec, setSyncLagSec] = useState(0);
+  const lastSeekTimeRef = useRef(0);
 
   const activeChatRef = useRef(activeChat);
   useEffect(() => {
@@ -122,9 +124,14 @@ export function SyncPlayPanel({
               }
             },
             onStateChange: (event) => {
-              if (ignorePlayerStateChangeRef.current) return;
-
               const state = event.data;
+              if (ignorePlayerStateChangeRef.current) {
+                if (state === 1 || state === 2) {
+                  ignorePlayerStateChangeRef.current = false;
+                }
+                return;
+              }
+
               const cTime = event.target.getCurrentTime();
               const currentActiveChat = activeChatRef.current;
               if (!currentActiveChat) return;
@@ -179,20 +186,113 @@ export function SyncPlayPanel({
     };
   }, []);
 
-  // Update progress bar periodically
+  const peerProgressMapRef = useRef({});
+
+  useEffect(() => {
+    if (!socket) return;
+    const handlePing = ({ chatId, userId, currentTime, isPlaying, timestamp }) => {
+      if (activeChatRef.current && activeChatRef.current._id === chatId && userId) {
+        peerProgressMapRef.current[userId] = {
+          currentTime: currentTime || 0,
+          isPlaying: !!isPlaying,
+          timestamp: timestamp || Date.now()
+        };
+      }
+    };
+    socket.on('sync_play_ping_broadcast', handlePing);
+    return () => socket.off('sync_play_ping_broadcast', handlePing);
+  }, [socket]);
+
+  // Update progress bar periodically & compute lag behind
   useEffect(() => {
     let interval;
+    let pingCounter = 0;
+
     if (syncPlayActive) {
       interval = setInterval(() => {
-        if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function' && !isDragging) {
-          setCurrentTime(ytPlayerRef.current.getCurrentTime() || 0);
+        if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+          // Suppress lag display during drag, active seeking, or within 3.5s of seek
+          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 3500;
+          if (isDragging || ignorePlayerStateChangeRef.current || isRecentlySeeked) {
+            setSyncLagSec(0);
+            return;
+          }
+
+          const localTime = ytPlayerRef.current.getCurrentTime() || 0;
+          setCurrentTime(localTime);
           setDuration(ytPlayerRef.current.getDuration() || 0);
           setBufferedFraction(ytPlayerRef.current.getVideoLoadedFraction() || 0);
+
+          let isPlayingLocal = false;
+          try {
+            isPlayingLocal = ytPlayerRef.current.getPlayerState() === 1;
+          } catch (e) {}
+
+          // Periodically emit sync_play_ping
+          pingCounter++;
+          if (pingCounter >= 5 && activeChatRef.current) {
+            pingCounter = 0;
+            socket?.emit('sync_play_ping', {
+              chatId: activeChatRef.current._id,
+              currentTime: localTime,
+              isPlaying: isPlayingLocal
+            });
+          }
+
+          const now = Date.now();
+          // Master lead time initialized to local user time
+          let masterLeadTime = isFinite(localTime) && !isNaN(localTime) ? localTime : 0;
+
+          // 1. Consider active room peers' live pings (within last 10s)
+          let hasActivePeers = false;
+          if (peerProgressMapRef.current) {
+            Object.values(peerProgressMapRef.current).forEach(peer => {
+              if (!peer || !peer.timestamp) return;
+              if (now - peer.timestamp > 10000) return;
+
+              hasActivePeers = true;
+              let peerTime = peer.currentTime || 0;
+              if (peer.isPlaying && peer.timestamp) {
+                const elapsed = Math.max(0, (now - peer.timestamp) / 1000);
+                if (elapsed < 300) {
+                  peerTime += elapsed;
+                }
+              }
+              if (isFinite(peerTime) && !isNaN(peerTime)) {
+                masterLeadTime = Math.max(masterLeadTime, peerTime);
+              }
+            });
+          }
+
+          // 2. Fallback to DB syncPlay record only if no active peers are broadcasting and dbTarget is plausible
+          if (!hasActivePeers && activeChatRef.current && activeChatRef.current.syncPlay && activeChatRef.current.syncPlay.active) {
+            const { currentTime: dbTime, isPlaying: dbPlaying, lastUpdatedAt } = activeChatRef.current.syncPlay;
+            let dbTarget = dbTime || 0;
+            if (dbPlaying && lastUpdatedAt) {
+              const parsed = new Date(lastUpdatedAt).getTime();
+              if (!isNaN(parsed)) {
+                const elapsed = Math.max(0, (now - parsed) / 1000);
+                if (elapsed < 60) {
+                  dbTarget += elapsed;
+                }
+              }
+            }
+            if (isFinite(dbTarget) && !isNaN(dbTarget)) {
+              if (Math.abs(dbTarget - localTime) < 300) {
+                masterLeadTime = Math.max(masterLeadTime, dbTarget);
+              }
+            }
+          }
+
+          const lag = masterLeadTime - localTime;
+          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 0.05 ? lag : 0);
         }
-      }, 500);
+      }, 300);
+    } else {
+      setSyncLagSec(0);
     }
     return () => clearInterval(interval);
-  }, [syncPlayActive, isDragging]);
+  }, [syncPlayActive, isDragging, socket]);
 
   const handleEndSyncPlayGroup = async () => {
     if (!activeChat) return;
@@ -263,6 +363,7 @@ export function SyncPlayPanel({
   };
 
   const handleSkipTime = (amount) => {
+    lastSeekTimeRef.current = Date.now();
     if (ytPlayerRef.current && ytPlayerReadyRef.current) {
       const cTime = ytPlayerRef.current.getCurrentTime() + amount;
       socket?.emit('sync_play_update', {
@@ -282,6 +383,52 @@ export function SyncPlayPanel({
   };
 
   const handleForceSync = async () => {
+    lastSeekTimeRef.current = Date.now();
+
+    const now = Date.now();
+    let localTime = 0;
+    if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+      localTime = ytPlayerRef.current.getCurrentTime() || 0;
+    }
+
+    let liveLeaderTime = isFinite(localTime) && !isNaN(localTime) ? localTime : 0;
+    let hasLivePeers = false;
+
+    if (peerProgressMapRef.current) {
+      Object.values(peerProgressMapRef.current).forEach(peer => {
+        if (!peer || !peer.timestamp) return;
+        if (now - peer.timestamp > 10000) return;
+
+        hasLivePeers = true;
+        let peerTime = peer.currentTime || 0;
+        if (peer.isPlaying && peer.timestamp) {
+          const elapsed = Math.max(0, (now - peer.timestamp) / 1000);
+          if (elapsed < 300) {
+            peerTime += elapsed;
+          }
+        }
+        if (isFinite(peerTime) && !isNaN(peerTime)) {
+          liveLeaderTime = Math.max(liveLeaderTime, peerTime);
+        }
+      });
+    }
+
+    // If live peers exist in the room, instantly force sync to the live leader!
+    if (hasLivePeers && liveLeaderTime > 0) {
+      if (ytPlayerRef.current && ytPlayerReadyRef.current) {
+        ignorePlayerStateChangeRef.current = true;
+        ytPlayerRef.current.seekTo(liveLeaderTime, true);
+        ytPlayerRef.current.playVideo();
+        setSyncPlayIsPlaying(true);
+        setSyncLagSec(0);
+
+        setTimeout(() => {
+          ignorePlayerStateChangeRef.current = false;
+        }, 800);
+      }
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/chats/${activeChat._id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -529,12 +676,24 @@ export function SyncPlayPanel({
 
               <button 
                 type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                className={`btn btn-sm ${syncLagSec > 1.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  backgroundColor: syncLagSec > 1.0 ? '#ef4444' : undefined,
+                  color: syncLagSec > 1.0 ? '#ffffff' : undefined,
+                  borderColor: syncLagSec > 1.0 ? '#dc2626' : undefined,
+                  boxShadow: syncLagSec > 1.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
+                  transition: 'all 0.2s ease'
+                }}
                 onClick={handleForceSync}
-                title="Resync if timeline drifted"
+                title={syncLagSec > 1.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Resync if timeline drifted"}
               >
-                Force Sync 🔄
+                <RefreshCw size={14} className={syncLagSec > 1.0 ? 'animate-spin' : ''} />
+                <span>
+                  Force Sync{syncLagSec > 0.1 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
+                </span>
               </button>
             </div>
           </div>

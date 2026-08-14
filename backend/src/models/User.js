@@ -40,6 +40,10 @@ const userSchema = new mongoose.Schema({
   jellyfinEnabled: {
     type: Boolean,
     default: false
+  },
+  externalVideosEnabled: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 

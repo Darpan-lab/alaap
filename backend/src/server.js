@@ -25,6 +25,7 @@ import chatsRoutes from './routes/chats.js';
 import adminRoutes, { getSetting } from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
 import jellyfinRoutes, { getJellyfinConfig, getJellyfinAuth } from './routes/jellyfin.js';
+import externalVideosRoutes from './routes/externalVideos.js';
 import callsRoutes from './routes/calls.js';
 import webhooksRoutes from './routes/webhooks.js';
 
@@ -56,6 +57,10 @@ if (!fs.existsSync(uploadsDir)) {
 const syncPlayDir = path.join(__dirname, '../uploads/syncplay');
 if (!fs.existsSync(syncPlayDir)) {
   fs.mkdirSync(syncPlayDir, { recursive: true });
+}
+const externalVideosDir = path.join(__dirname, '../uploads/external');
+if (!fs.existsSync(externalVideosDir)) {
+  fs.mkdirSync(externalVideosDir, { recursive: true });
 }
 
 // Track active background downloads in memory: videoKey -> { progress: number, chatIds: Set<string> }
@@ -587,6 +592,7 @@ app.use('/api/chats', chatsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/jellyfin', jellyfinRoutes);
+app.use('/api/external-videos', externalVideosRoutes);
 app.use('/api/calls', callsRoutes);
 
 // Health check endpoint
@@ -1065,6 +1071,61 @@ io.on('connection', async (socket) => {
           });
           return;
         }
+
+        // Handle External Server videos
+        if (targetVideoId.startsWith('external:') || targetVideoId.includes('/api/external-videos/stream/')) {
+          const rawFilename = targetVideoId.replace('external:', '').replace(/.*\/api\/external-videos\/stream\//, '');
+          const filename = decodeURIComponent(rawFilename);
+          const ext = path.extname(filename);
+          const title = path.basename(filename, ext) || 'External Video';
+          const streamUrl = `/api/external-videos/stream/${encodeURIComponent(filename)}`;
+
+          const savedHistory = chat.syncPlay?.history || [];
+          savedHistory.push({
+            videoId: `external:${filename}`,
+            videoTitle: title,
+            videoUrl: streamUrl,
+            durationSec: durationSec || 0,
+            addedBy: userId,
+            addedByName: socket.user.username || 'User',
+            addedAt: new Date()
+          });
+
+          chat.syncPlay = {
+            active: true,
+            videoId: `external:${filename}`,
+            videoTitle: title,
+            videoUrl: streamUrl,
+            downloadStatus: 'completed',
+            downloadProgress: 100,
+            downloadError: '',
+            currentTime: 0,
+            durationSec: durationSec || 0,
+            isPlaying: false,
+            lastUpdatedBy: userId,
+            lastUpdatedAt: new Date(),
+            history: savedHistory
+          };
+          await chat.save();
+
+          io.to(chatId).emit('sync_play_broadcast', {
+            chatId,
+            videoId: chat.syncPlay.videoId,
+            videoTitle: chat.syncPlay.videoTitle,
+            videoUrl: chat.syncPlay.videoUrl,
+            downloadStatus: 'completed',
+            downloadProgress: 100,
+            downloadError: '',
+            action: 'change_video',
+            currentTime: 0,
+            durationSec: chat.syncPlay.durationSec,
+            isPlaying: false,
+            senderId: userId,
+            senderName: socket.user.username,
+            history: chat.syncPlay.history
+          });
+          return;
+        }
         
         // If it's a search query rather than a direct URL/ID, check database history for title matches first
         if (!targetVideoId.startsWith('http') && !targetVideoId.includes('www.') && !targetVideoId.includes('youtube.com') && !targetVideoId.includes('youtu.be') && targetVideoId.trim().length > 2) {
@@ -1172,6 +1233,17 @@ io.on('connection', async (socket) => {
     } catch (err) {
       console.error('Error in sync_play_update:', err);
     }
+  });
+
+  socket.on('sync_play_ping', ({ chatId, currentTime, isPlaying }) => {
+    if (!chatId) return;
+    socket.to(chatId).emit('sync_play_ping_broadcast', {
+      chatId,
+      userId,
+      currentTime: currentTime || 0,
+      isPlaying: !!isPlaying,
+      timestamp: Date.now()
+    });
   });
 
   socket.on('sync_play_toggle', async ({ chatId, active, videoId }) => {

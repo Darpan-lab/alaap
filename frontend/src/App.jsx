@@ -5,12 +5,13 @@ import {
   Settings, Shield, Trash2, Key, FileText, Download, Users, X, 
   Loader2, UploadCloud, Check, CheckCheck, Lock, ToggleLeft, ToggleRight, Sparkles, ChevronRight, Edit, ArrowLeft, ArrowRight, ArrowLeftRight,
   Smile, Mic, MicOff, Play, Pause, CornerUpLeft, Ban, Unlock, MoreVertical, Tv, Eye, EyeOff, UserMinus, PanelLeftClose, PanelLeftOpen, Info,
-  Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff, Phone, Menu, Home
+  Volume2, Volume1, VolumeX, Maximize, Minimize, RefreshCw, History, ScreenShare, Bell, BellOff, Phone, Menu, Home, Folder
 } from 'lucide-react';
 import { API_BASE_URL, SOCKET_URL } from './config';
 import { formatBDMessageTime, formatBDTimeOnly } from './utils/dateUtils';
 import AudioMessagePlayer from './components/Media/AudioMessagePlayer';
 import { JellyfinModal, JellyfinLogo } from './components/SyncPlay/JellyfinModal';
+import { ExternalVideosModal } from './components/SyncPlay/ExternalVideosModal';
 import { SyncPlayProgressDashboard } from './components/SyncPlay/SyncPlayProgressDashboard';
 import { VoiceCallRoom } from './components/Call/VoiceCallRoom';
 import './App.css';
@@ -1620,8 +1621,13 @@ function App() {
   const clickTimeoutRef = useRef(null);
   const jellyfinDurationRef = useRef(null);
   const [skipIndicator, setSkipIndicator] = useState(null);
+  const [syncLagSec, setSyncLagSec] = useState(0);
+  const peerProgressMapRef = useRef({});
+  const lastSeekTimeRef = useRef(0);
 
   const [jellyfinStatus, setJellyfinStatus] = useState({ configured: false, globalEnabled: false, userEnabled: false, canUseJellyfin: false });
+  const [isExternalVideosModalOpen, setIsExternalVideosModalOpen] = useState(false);
+  const [externalVideosStatus, setExternalVideosStatus] = useState({ configured: true, globalEnabled: true, canUseExternalVideos: false });
 
   const fetchJellyfinStatus = async () => {
     if (!token) return;
@@ -1638,8 +1644,24 @@ function App() {
     }
   };
 
+  const fetchExternalVideosStatus = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/external-videos/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExternalVideosStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch External Videos status:', e);
+    }
+  };
+
   useEffect(() => {
     fetchJellyfinStatus();
+    fetchExternalVideosStatus();
   }, [token]);
 
   // Floating Chat States & Refs
@@ -2802,9 +2824,10 @@ function App() {
           setSyncPlayHistory(history);
         }
         
-        if (durationSec && durationSec > 0) {
-          jellyfinDurationRef.current = durationSec;
-          setVideoDuration(durationSec);
+        if (action === 'seek' || action === 'change_video') {
+          lastSeekTimeRef.current = Date.now();
+          peerProgressMapRef.current = {};
+          setSyncLagSec(0);
         }
 
         if (downloadStatus === 'completed' && videoPlayerRef.current) {
@@ -2880,7 +2903,16 @@ function App() {
             }
             
             setTimeout(() => {
-              ignorePlayerStateChangeRef.current = false;
+              let isBuffering = false;
+              try {
+                if (ytPlayerRef.current && typeof ytPlayerRef.current.getPlayerState === 'function') {
+                  isBuffering = ytPlayerRef.current.getPlayerState() === 3;
+                }
+              } catch (e) {}
+              
+              if (!isBuffering) {
+                ignorePlayerStateChangeRef.current = false;
+              }
             }, 800);
           }
         }
@@ -2981,6 +3013,16 @@ function App() {
         }
         return c;
       }));
+    });
+
+    socket.on('sync_play_ping_broadcast', ({ chatId, userId, currentTime, isPlaying, timestamp }) => {
+      if (activeChatRef.current && activeChatRef.current._id === chatId && userId) {
+        peerProgressMapRef.current[userId] = {
+          currentTime: currentTime || 0,
+          isPlaying: !!isPlaying,
+          timestamp: timestamp || Date.now()
+        };
+      }
     });
 
     socket.on('sync_play_toggled', ({ chatId, active, syncPlay }) => {
@@ -3144,6 +3186,10 @@ function App() {
 
     socket.on('jellyfin_status_updated', () => {
       fetchJellyfinStatus();
+    });
+
+    socket.on('external_videos_status_updated', () => {
+      fetchExternalVideosStatus();
     });
 
     // Voice Call Room Real-time Status Handler
@@ -4146,6 +4192,104 @@ function App() {
       .catch(err => console.error('Failed to fetch Jellyfin item info:', err));
   }, [syncPlayVideoId, token]);
 
+  // Periodically emit sync_play_ping & compute lag behind state compared to the leading room timeline
+  useEffect(() => {
+    let interval;
+    let pingCounter = 0;
+
+    if (syncPlayActive && activeChat && activeChat.syncPlay && activeChat.syncPlay.active) {
+      interval = setInterval(() => {
+        try {
+          // Suppress lag during dragging, active seek operations, or within 3.5s of a seek
+          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 3500;
+          const isElementSeeking = Boolean(videoPlayerRef.current && videoPlayerRef.current.seeking);
+          if (isDraggingTimelineRef.current || ignorePlayerStateChangeRef.current || isRecentlySeeked || isElementSeeking) {
+            setSyncLagSec(0);
+            return;
+          }
+
+          let localTime = 0;
+          let isPlayingLocal = false;
+
+          if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+            localTime = videoPlayerRef.current.currentTime || 0;
+            isPlayingLocal = !videoPlayerRef.current.paused;
+          } else if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+            localTime = ytPlayerRef.current.getCurrentTime() || 0;
+            try {
+              isPlayingLocal = ytPlayerRef.current.getPlayerState() === 1;
+            } catch (e) {}
+          }
+
+          // Periodically ping server so room peers know local position
+          pingCounter++;
+          if (pingCounter >= 5) { // Every ~1.5s (300ms * 5)
+            pingCounter = 0;
+            socketRef.current?.emit('sync_play_ping', {
+              chatId: activeChat._id,
+              currentTime: localTime,
+              isPlaying: isPlayingLocal
+            });
+          }
+
+          const now = Date.now();
+          // Master lead time is initialized to local user time
+          let masterLeadTime = isFinite(localTime) && !isNaN(localTime) ? localTime : 0;
+
+          // 1. Consider active room peers' live pings (within last 10s)
+          let hasActivePeers = false;
+          if (peerProgressMapRef.current) {
+            Object.values(peerProgressMapRef.current).forEach(peer => {
+              if (!peer || !peer.timestamp) return;
+              if (now - peer.timestamp > 10000) return; // Drop stale peer update (>10s)
+
+              hasActivePeers = true;
+              let peerTime = peer.currentTime || 0;
+              if (peer.isPlaying && peer.timestamp) {
+                const elapsed = Math.max(0, (now - peer.timestamp) / 1000);
+                if (elapsed < 300) {
+                  peerTime += elapsed;
+                }
+              }
+              if (isFinite(peerTime) && !isNaN(peerTime)) {
+                masterLeadTime = Math.max(masterLeadTime, peerTime);
+              }
+            });
+          }
+
+          // 2. Fallback to DB syncPlay record only if no active peers are broadcasting and dbTarget is plausible
+          if (!hasActivePeers && activeChat.syncPlay) {
+            const { currentTime: dbTime, isPlaying: dbPlaying, lastUpdatedAt } = activeChat.syncPlay;
+            let dbTarget = dbTime || 0;
+            if (dbPlaying && lastUpdatedAt) {
+              const parsed = new Date(lastUpdatedAt).getTime();
+              if (!isNaN(parsed)) {
+                const elapsed = Math.max(0, (now - parsed) / 1000);
+                if (elapsed < 60) { // Only trust DB elapsed if updated within the last 60 seconds
+                  dbTarget += elapsed;
+                }
+              }
+            }
+            if (isFinite(dbTarget) && !isNaN(dbTarget)) {
+              if (Math.abs(dbTarget - localTime) < 300) {
+                masterLeadTime = Math.max(masterLeadTime, dbTarget);
+              }
+            }
+          }
+
+          const lag = masterLeadTime - localTime;
+          // Set lag if positive and significant (>0.05s)
+          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 0.05 ? lag : 0);
+        } catch (e) {
+          console.warn('Lag calculation error:', e);
+        }
+      }, 300);
+    } else {
+      setSyncLagSec(0);
+    }
+    return () => clearInterval(interval);
+  }, [syncPlayActive, activeChat, syncPlayDownloadStatus]);
+
   const handleMouseMoveControls = () => {
     setShowCustomControls(true);
     if (controlsTimeoutRef.current) {
@@ -4511,10 +4655,15 @@ function App() {
       durationSec: durationOverride
     });
 
+    const isDirectStream = targetVideoId.startsWith('jellyfin:') || 
+                           targetVideoId.includes('/api/jellyfin/stream/') ||
+                           targetVideoId.startsWith('external:') || 
+                           targetVideoId.includes('/api/external-videos/stream/');
+
     setSyncPlayVideoId(targetVideoId);
-    setSyncPlayVideoUrl('');
-    setSyncPlayDownloadStatus('downloading');
-    setSyncPlayDownloadProgress(0);
+    setSyncPlayVideoUrl(isDirectStream ? targetVideoId : '');
+    setSyncPlayDownloadStatus(isDirectStream ? 'completed' : 'downloading');
+    setSyncPlayDownloadProgress(isDirectStream ? 100 : 0);
     setSyncPlayDownloadError('');
     setSyncPlayIsPlaying(false);
     setSyncPlayInputUrl('');
@@ -4886,6 +5035,7 @@ function App() {
   };
 
   function handleSkipTime(amount) {
+    lastSeekTimeRef.current = Date.now();
     if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
       const currentTime = videoPlayerRef.current.currentTime + amount;
       socketRef.current?.emit('sync_play_update', {
@@ -4923,6 +5073,58 @@ function App() {
   };
 
   const handleForceSync = async () => {
+    lastSeekTimeRef.current = Date.now();
+
+    // Check if there are live active room peers leading the room
+    const now = Date.now();
+    let localTime = 0;
+    if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+      localTime = videoPlayerRef.current.currentTime || 0;
+    } else if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
+      localTime = ytPlayerRef.current.getCurrentTime() || 0;
+    }
+
+    let liveLeaderTime = isFinite(localTime) && !isNaN(localTime) ? localTime : 0;
+    let hasLivePeers = false;
+
+    if (peerProgressMapRef.current) {
+      Object.values(peerProgressMapRef.current).forEach(peer => {
+        if (!peer || !peer.timestamp) return;
+        if (now - peer.timestamp > 10000) return;
+
+        hasLivePeers = true;
+        let peerTime = peer.currentTime || 0;
+        if (peer.isPlaying && peer.timestamp) {
+          const elapsed = Math.max(0, (now - peer.timestamp) / 1000);
+          if (elapsed < 300) {
+            peerTime += elapsed;
+          }
+        }
+        if (isFinite(peerTime) && !isNaN(peerTime)) {
+          liveLeaderTime = Math.max(liveLeaderTime, peerTime);
+        }
+      });
+    }
+
+    // If live peers exist in the room, instantly force sync to the live leader!
+    if (hasLivePeers && liveLeaderTime > 0) {
+      ignorePlayerStateChangeRef.current = true;
+      if (syncPlayDownloadStatus === 'completed' && videoPlayerRef.current) {
+        videoPlayerRef.current.currentTime = liveLeaderTime;
+        videoPlayerRef.current.play().catch(e => console.error(e));
+      } else if (ytPlayerRef.current && ytPlayerReadyRef.current) {
+        ytPlayerRef.current.seekTo(liveLeaderTime, true);
+        ytPlayerRef.current.playVideo();
+      }
+      setSyncPlayIsPlaying(true);
+      setSyncLagSec(0);
+
+      setTimeout(() => {
+        ignorePlayerStateChangeRef.current = false;
+      }, 800);
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/chats/${activeChat._id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -6631,7 +6833,21 @@ function App() {
                           style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
                           onPlay={handleVideoPlay}
                           onPause={handleVideoPause}
-                          onSeeked={handleVideoSeeked}
+                          onSeeking={() => {
+                            lastSeekTimeRef.current = Date.now();
+                            ignorePlayerStateChangeRef.current = true;
+                            peerProgressMapRef.current = {};
+                            setSyncLagSec(0);
+                          }}
+                          onSeeked={(e) => {
+                            lastSeekTimeRef.current = Date.now();
+                            peerProgressMapRef.current = {};
+                            setSyncLagSec(0);
+                            handleVideoSeeked(e);
+                            setTimeout(() => {
+                              ignorePlayerStateChangeRef.current = false;
+                            }, 1500);
+                          }}
                           onLoadedMetadata={(e) => {
                             if (jellyfinDurationRef.current && jellyfinDurationRef.current > 0) {
                               setVideoDuration(jellyfinDurationRef.current);
@@ -7450,6 +7666,35 @@ function App() {
                           <ArrowRight size={16} />
                         </button>
                       </div>
+
+                      <button 
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          background: externalVideosStatus.canUseExternalVideos ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                          border: externalVideosStatus.canUseExternalVideos ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          color: externalVideosStatus.canUseExternalVideos ? '#60a5fa' : 'rgba(255, 255, 255, 0.4)',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap',
+                          filter: externalVideosStatus.canUseExternalVideos ? 'none' : 'grayscale(100%)',
+                          opacity: externalVideosStatus.canUseExternalVideos ? 1 : 0.6,
+                          cursor: externalVideosStatus.canUseExternalVideos ? 'pointer' : 'not-allowed'
+                        }}
+                        title="Server Folder"
+                        onClick={() => {
+                          if (externalVideosStatus.canUseExternalVideos) {
+                            setIsExternalVideosModalOpen(true);
+                          } else {
+                            showAlert("Server videos feature is not enabled for your account. Please contact system administrator.");
+                          }
+                        }}
+                      >
+                        <Folder size={16} />
+                      </button>
+
                       <button 
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -7480,8 +7725,8 @@ function App() {
                           }
                         }}
                       >
-                        <Tv size={15} />
-                        <span>Load from Jellyfin</span>
+                        <JellyfinLogo size={16} />
+                        <span>Jellyfin</span>
                       </button>
                     </div>
 
@@ -7536,32 +7781,25 @@ function App() {
 
                       <button 
                         type="button"
-                        className="btn btn-secondary btn-sm flex items-center"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        onClick={handleForceSync}
-                        title="Force Sync Timeline"
-                      >
-                        <RefreshCw size={14} />
-                      </button>
-                      <button 
-                        type="button"
-                        className="btn btn-secondary btn-sm flex items-center"
-                        disabled={!activeCall}
+                        className={`btn btn-sm flex items-center gap-1 ${syncLagSec > 1.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
                         style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: callMicEnabled ? 'inherit' : '#ef4444',
-                          opacity: !activeCall ? 0.5 : 1,
-                          cursor: !activeCall ? 'not-allowed' : 'pointer'
+                          justifyContent: 'center',
+                          gap: '4px',
+                          backgroundColor: syncLagSec > 1.0 ? '#ef4444' : undefined,
+                          color: syncLagSec > 1.0 ? '#ffffff' : undefined,
+                          borderColor: syncLagSec > 1.0 ? '#dc2626' : undefined,
+                          boxShadow: syncLagSec > 1.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
+                          transition: 'all 0.2s ease'
                         }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.dispatchEvent(new Event('toggle-mic'));
-                        }}
-                        title={!activeCall ? "Join voice call to use microphone" : callMicEnabled ? "Mute Microphone" : "Unmute Microphone"}
+                        onClick={handleForceSync}
+                        title={syncLagSec > 1.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Force Sync Timeline"}
                       >
-                        {callMicEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+                        <RefreshCw size={14} className={syncLagSec > 1.0 ? 'animate-spin' : ''} />
+                        <span>
+                          Force Sync{syncLagSec > 0.1 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -8757,6 +8995,17 @@ function App() {
           handleChangeVideo(streamUrl, durationSec);
         }}
       />
+
+      {/* External Server Videos Modal for SyncPlay */}
+      <ExternalVideosModal 
+        token={token}
+        isOpen={isExternalVideosModalOpen}
+        onClose={() => setIsExternalVideosModalOpen(false)}
+        onSelectVideo={(streamUrl, videoTitle) => {
+          handleChangeVideo(streamUrl);
+        }}
+        socket={socketRef.current}
+      />
     </div>
   );
 }
@@ -8993,6 +9242,33 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
     } catch (err) {
       console.error(err);
       setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, jellyfinEnabled: targetUser.jellyfinEnabled } : u));
+      showAlert('Error connecting to server.');
+    }
+  };
+
+  const handleToggleUserExternalVideos = async (targetUser) => {
+    const nextEnabled = !targetUser.externalVideosEnabled;
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: nextEnabled } : u));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-external-videos`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      if (response.ok) {
+        fetchAdminData();
+        fetchExternalVideosStatus();
+      } else {
+        const data = await response.json();
+        setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: targetUser.externalVideosEnabled } : u));
+        showAlert(data.error || 'Failed to toggle External Videos permission.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: targetUser.externalVideosEnabled } : u));
       showAlert('Error connecting to server.');
     }
   };
@@ -9785,6 +10061,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                     <th>Unique ID</th>
                     <th>Role</th>
                     <th style={{ textAlign: 'center' }}>Jellyfin Access</th>
+                    <th style={{ textAlign: 'center' }}>Server Folder</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -9833,6 +10110,43 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                           </button>
                         ) : u.jellyfinEnabled ? (
                           <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
+                            Enabled
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            Disabled
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {u.role === 'Root' || u.isAdmin ? (
+                          <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            Root (Always On)
+                          </span>
+                        ) : user?.role === 'Root' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUserExternalVideos(u)}
+                            title={u.externalVideosEnabled ? "Click to disable External Videos access" : "Click to enable External Videos access"}
+                            style={{
+                              cursor: 'pointer',
+                              border: u.externalVideosEnabled ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--glass-border)',
+                              background: u.externalVideosEnabled ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                              color: u.externalVideosEnabled ? '#60a5fa' : 'var(--text-muted)',
+                              fontWeight: '600',
+                              fontSize: '0.75rem',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {u.externalVideosEnabled ? '✓ Enabled' : '✕ Disabled'}
+                          </button>
+                        ) : u.externalVideosEnabled ? (
+                          <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: '600', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
                             Enabled
                           </span>
                         ) : (

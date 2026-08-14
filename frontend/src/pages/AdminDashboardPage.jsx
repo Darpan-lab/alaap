@@ -70,6 +70,32 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
       showAlert('Error connecting to server.');
     }
   };
+
+  const handleToggleUserExternalVideos = async (targetUser) => {
+    const nextEnabled = !targetUser.externalVideosEnabled;
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: nextEnabled } : u));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-external-videos`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      if (response.ok) {
+        fetchAdminData();
+      } else {
+        const data = await response.json();
+        setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: targetUser.externalVideosEnabled } : u));
+        showAlert(data.error || 'Failed to toggle External Videos permission.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: targetUser.externalVideosEnabled } : u));
+      showAlert('Error connecting to server.');
+    }
+  };
   
   const [activeTab, setActiveTab] = useState('system'); // 'system', 'groups', 'conversations'
   const [groups, setGroups] = useState([]);
@@ -839,6 +865,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                     <th>Username</th>
                     <th>Role</th>
                     <th style={{ textAlign: 'center' }}>Jellyfin Access</th>
+                    <th style={{ textAlign: 'center' }}>Server Folder</th>
                     <th>Status</th>
                     <th>Registered</th>
                     <th>Action</th>
@@ -884,6 +911,43 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                           </button>
                         ) : u.jellyfinEnabled ? (
                           <span style={{ fontSize: '0.75rem', color: '#00a4dc', fontWeight: '600', background: 'rgba(0,164,220,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(0,164,220,0.2)' }}>
+                            Enabled
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            Disabled
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {u.role === 'Root' || u.isAdmin ? (
+                          <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            Root (Always On)
+                          </span>
+                        ) : user?.role === 'Root' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUserExternalVideos(u)}
+                            title={u.externalVideosEnabled ? "Click to disable External Videos access" : "Click to enable External Videos access"}
+                            style={{
+                              cursor: 'pointer',
+                              border: u.externalVideosEnabled ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--glass-border)',
+                              background: u.externalVideosEnabled ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                              color: u.externalVideosEnabled ? '#60a5fa' : 'var(--text-muted)',
+                              fontWeight: '600',
+                              fontSize: '0.75rem',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {u.externalVideosEnabled ? '✓ Enabled' : '✕ Disabled'}
+                          </button>
+                        ) : u.externalVideosEnabled ? (
+                          <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: '600', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
                             Enabled
                           </span>
                         ) : (

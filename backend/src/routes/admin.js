@@ -51,7 +51,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
 
     // Get all users for admin list
     const users = await User.find({})
-      .select('username isAdmin role status profilePic jellyfinEnabled createdAt')
+      .select('username isAdmin role status profilePic jellyfinEnabled externalVideosEnabled createdAt')
       .sort({ createdAt: -1 });
 
     const mappedUsers = users.map(u => {
@@ -60,6 +60,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
         uObj.role = 'Root';
       }
       uObj.jellyfinEnabled = !!uObj.jellyfinEnabled;
+      uObj.externalVideosEnabled = !!uObj.externalVideosEnabled;
       return uObj;
     });
 
@@ -188,6 +189,35 @@ router.put('/users/:userId/toggle-jellyfin', auth, adminAuth, async (req, res) =
   } catch (error) {
     console.error('Toggle User Jellyfin Error:', error);
     res.status(500).json({ error: 'Failed to update user Jellyfin permission.' });
+  }
+});
+
+// Toggle User External Videos Permission (Root only)
+router.put('/users/:userId/toggle-external-videos', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can toggle External Videos permissions for users.' });
+    }
+    const { userId } = req.params;
+    const { enabled } = req.body;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    user.externalVideosEnabled = enabled !== undefined ? Boolean(enabled) : !user.externalVideosEnabled;
+    await user.save();
+    if (req.io) {
+      req.io.emit('external_videos_status_updated');
+    }
+    res.json({
+      success: true,
+      message: `External videos access ${user.externalVideosEnabled ? 'enabled' : 'disabled'} for ${user.username}.`,
+      externalVideosEnabled: user.externalVideosEnabled
+    });
+  } catch (error) {
+    console.error('Toggle User External Videos Error:', error);
+    res.status(500).json({ error: 'Failed to update user external videos permission.' });
   }
 });
 

@@ -55,6 +55,17 @@ export default function registerSyncPlayHandlers(io, socket) {
     }
   });
 
+  socket.on('sync_play_ping', ({ chatId, currentTime, isPlaying }) => {
+    if (!chatId) return;
+    socket.to(chatId).emit('sync_play_ping_broadcast', {
+      chatId,
+      userId,
+      currentTime: currentTime || 0,
+      isPlaying: !!isPlaying,
+      timestamp: Date.now()
+    });
+  });
+
   socket.on('sync_play_toggle', async ({ chatId, active, videoId }) => {
     try {
       if (!chatId) return;

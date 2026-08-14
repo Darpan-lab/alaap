@@ -53,6 +53,8 @@ Desktop.ini
 # Local uploads and temporary storage
 **/uploads/*
 !**/uploads/.gitkeep
+backend/uploads/external/*
+!backend/uploads/external/.gitkeep
 tmp/
 temp/
 yt-dlp-cookies.txt
