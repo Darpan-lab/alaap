@@ -38,6 +38,7 @@ export function SyncPlayPanel({
   const [isDragging, setIsDragging] = useState(false);
   const [syncLagSec, setSyncLagSec] = useState(0);
   const lastSeekTimeRef = useRef(0);
+  const lastPlayPauseTimeRef = useRef(0);
 
   const activeChatRef = useRef(activeChat);
   useEffect(() => {
@@ -211,9 +212,10 @@ export function SyncPlayPanel({
     if (syncPlayActive) {
       interval = setInterval(() => {
         if (ytPlayerRef.current && ytPlayerReadyRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
-          // Suppress lag display during drag, active seeking, or within 3.5s of seek
-          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 3500;
-          if (isDragging || ignorePlayerStateChangeRef.current || isRecentlySeeked) {
+          // Suppress lag display during drag, active seeking (2s), or play/pause transition (2s)
+          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 2000;
+          const isRecentlyPlayPaused = (Date.now() - lastPlayPauseTimeRef.current) < 2000;
+          if (isDragging || ignorePlayerStateChangeRef.current || isRecentlySeeked || isRecentlyPlayPaused) {
             setSyncLagSec(0);
             return;
           }
@@ -285,7 +287,7 @@ export function SyncPlayPanel({
           }
 
           const lag = masterLeadTime - localTime;
-          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 0.05 ? lag : 0);
+          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 2.0 ? lag : 0);
         }
       }, 300);
     } else {
@@ -676,23 +678,23 @@ export function SyncPlayPanel({
 
               <button 
                 type="button"
-                className={`btn btn-sm ${syncLagSec > 1.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
+                className={`btn btn-sm ${syncLagSec > 2.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
                 style={{ 
                   display: 'flex', 
                   alignItems: 'center', 
                   gap: '4px',
-                  backgroundColor: syncLagSec > 1.0 ? '#ef4444' : undefined,
-                  color: syncLagSec > 1.0 ? '#ffffff' : undefined,
-                  borderColor: syncLagSec > 1.0 ? '#dc2626' : undefined,
-                  boxShadow: syncLagSec > 1.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
+                  backgroundColor: syncLagSec > 2.0 ? '#ef4444' : undefined,
+                  color: syncLagSec > 2.0 ? '#ffffff' : undefined,
+                  borderColor: syncLagSec > 2.0 ? '#dc2626' : undefined,
+                  boxShadow: syncLagSec > 2.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
                   transition: 'all 0.2s ease'
                 }}
                 onClick={handleForceSync}
-                title={syncLagSec > 1.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Resync if timeline drifted"}
+                title={syncLagSec > 2.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Resync if timeline drifted"}
               >
-                <RefreshCw size={14} className={syncLagSec > 1.0 ? 'animate-spin' : ''} />
+                <RefreshCw size={14} className={syncLagSec > 2.0 ? 'animate-spin' : ''} />
                 <span>
-                  Force Sync{syncLagSec > 0.1 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
+                  Force Sync{syncLagSec > 2.0 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
                 </span>
               </button>
             </div>

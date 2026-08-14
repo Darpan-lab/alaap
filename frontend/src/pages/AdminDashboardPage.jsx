@@ -1220,7 +1220,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                                   </div>
                                 </div>
                               ) : (
-                                <a href={msg.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
+                                <a href={msg.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--secondary)', textDecoration: 'underline', fontWeight: '600' }}>
                                   📎 {msg.fileName}
                                 </a>
                               )

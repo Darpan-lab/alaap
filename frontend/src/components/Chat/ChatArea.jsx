@@ -598,8 +598,9 @@ export function ChatArea({
               target="_blank" 
               rel="noopener noreferrer"
               style={{
-                color: 'var(--primary)',
-                textDecoration: 'underline'
+                color: 'var(--secondary)',
+                textDecoration: 'underline',
+                fontWeight: '600'
               }}
             >
               {part}
