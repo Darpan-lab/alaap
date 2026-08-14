@@ -45,7 +45,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        cacheId: 'alaap-pwa-v1.1.23',
+        cacheId: 'alaap-pwa-v1.1.22',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [/^\/api/, /^\/socket\.io/, /^\/uploads/],
         cleanupOutdatedCaches: true,

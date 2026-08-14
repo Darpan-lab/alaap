@@ -1624,7 +1624,6 @@ function App() {
   const [syncLagSec, setSyncLagSec] = useState(0);
   const peerProgressMapRef = useRef({});
   const lastSeekTimeRef = useRef(0);
-  const lastPlayPauseTimeRef = useRef(0);
 
   const [jellyfinStatus, setJellyfinStatus] = useState({ configured: false, globalEnabled: false, userEnabled: false, canUseJellyfin: false });
   const [isExternalVideosModalOpen, setIsExternalVideosModalOpen] = useState(false);
@@ -2829,10 +2828,6 @@ function App() {
         if (action === 'seek' || action === 'change_video') {
           lastSeekTimeRef.current = Date.now();
           peerProgressMapRef.current = {};
-          setSyncLagSec(0);
-        }
-        if (action === 'play' || action === 'pause') {
-          lastPlayPauseTimeRef.current = Date.now();
           setSyncLagSec(0);
         }
 
@@ -4206,11 +4201,10 @@ function App() {
     if (syncPlayActive && activeChat && activeChat.syncPlay && activeChat.syncPlay.active) {
       interval = setInterval(() => {
         try {
-          // Suppress lag during dragging, active seek operations (2s), play/pause transitions (2s), or active element seeking
-          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 2000;
-          const isRecentlyPlayPaused = (Date.now() - lastPlayPauseTimeRef.current) < 2000;
+          // Suppress lag during dragging, active seek operations, or within 3.5s of a seek
+          const isRecentlySeeked = (Date.now() - lastSeekTimeRef.current) < 3500;
           const isElementSeeking = Boolean(videoPlayerRef.current && videoPlayerRef.current.seeking);
-          if (isDraggingTimelineRef.current || ignorePlayerStateChangeRef.current || isRecentlySeeked || isRecentlyPlayPaused || isElementSeeking) {
+          if (isDraggingTimelineRef.current || ignorePlayerStateChangeRef.current || isRecentlySeeked || isElementSeeking) {
             setSyncLagSec(0);
             return;
           }
@@ -4285,8 +4279,8 @@ function App() {
           }
 
           const lag = masterLeadTime - localTime;
-          // Set lag if positive and significant (> 2.0s)
-          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 2.0 ? lag : 0);
+          // Set lag if positive and significant (>0.05s)
+          setSyncLagSec(isFinite(lag) && !isNaN(lag) && lag > 0.05 ? lag : 0);
         } catch (e) {
           console.warn('Lag calculation error:', e);
         }
@@ -6838,14 +6832,8 @@ function App() {
                           src={`${API_BASE_URL.replace('/api', '')}${syncPlayVideoUrl}`}
                           crossOrigin="anonymous"
                           style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
-                          onPlay={() => {
-                            lastPlayPauseTimeRef.current = Date.now();
-                            setSyncLagSec(0);
-                          }}
-                          onPause={() => {
-                            lastPlayPauseTimeRef.current = Date.now();
-                            setSyncLagSec(0);
-                          }}
+                          onPlay={handleVideoPlay}
+                          onPause={handleVideoPause}
                           onSeeking={() => {
                             lastSeekTimeRef.current = Date.now();
                             ignorePlayerStateChangeRef.current = true;
@@ -7794,24 +7782,24 @@ function App() {
 
                       <button 
                         type="button"
-                        className={`btn btn-sm flex items-center gap-1 ${syncLagSec > 2.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
+                        className={`btn btn-sm flex items-center gap-1 ${syncLagSec > 1.0 ? 'btn-danger animate-pulse' : 'btn-secondary'}`}
                         style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
                           justifyContent: 'center',
                           gap: '4px',
-                          backgroundColor: syncLagSec > 2.0 ? '#ef4444' : undefined,
-                          color: syncLagSec > 2.0 ? '#ffffff' : undefined,
-                          borderColor: syncLagSec > 2.0 ? '#dc2626' : undefined,
-                          boxShadow: syncLagSec > 2.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
+                          backgroundColor: syncLagSec > 1.0 ? '#ef4444' : undefined,
+                          color: syncLagSec > 1.0 ? '#ffffff' : undefined,
+                          borderColor: syncLagSec > 1.0 ? '#dc2626' : undefined,
+                          boxShadow: syncLagSec > 1.0 ? '0 0 12px rgba(239, 68, 68, 0.6)' : undefined,
                           transition: 'all 0.2s ease'
                         }}
                         onClick={handleForceSync}
-                        title={syncLagSec > 2.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Force Sync Timeline"}
+                        title={syncLagSec > 1.0 ? `Lagging behind by ${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'} - Click to Force Sync` : "Force Sync Timeline"}
                       >
-                        <RefreshCw size={14} className={syncLagSec > 2.0 ? 'animate-spin' : ''} />
+                        <RefreshCw size={14} className={syncLagSec > 1.0 ? 'animate-spin' : ''} />
                         <span>
-                          Force Sync{syncLagSec > 2.0 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
+                          Force Sync{syncLagSec > 0.1 ? ` (-${syncLagSec < 60 ? syncLagSec.toFixed(1) + 's' : Math.floor(syncLagSec / 60) + 'm ' + (syncLagSec % 60).toFixed(1) + 's'})` : ''}
                         </span>
                       </button>
                     </div>
