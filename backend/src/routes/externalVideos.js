@@ -127,6 +127,13 @@ router.get('/list', auth, async (req, res) => {
 
 // Upload video file directly to /backend/uploads/external/
 router.post('/upload', auth, async (req, res) => {
+  // Prevent socket timeout during large file uploads (2GB+)
+  req.setTimeout(0);
+  if (req.socket) {
+    req.socket.setTimeout(0);
+    req.socket.setKeepAlive(true);
+  }
+
   try {
     const allowed = await checkPermission(req);
     if (!allowed) {

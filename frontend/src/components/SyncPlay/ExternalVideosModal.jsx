@@ -20,6 +20,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
   const xhrRef = useRef(null);
+  const hasStartedPlayingRef = useRef(false);
 
   const fetchVideos = async () => {
     if (!token) return;
@@ -88,7 +89,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
     }
   };
 
-  const handleUploadSubmit = () => {
+  const handleUploadSubmit = (autoPlay = true) => {
     if (!selectedFile) {
       setUploadError('Please select a video file to upload.');
       return;
@@ -99,6 +100,12 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
     setUploadError('');
     setUploadSuccess('');
     setUploadSpeed('0 MB/s');
+    hasStartedPlayingRef.current = false;
+
+    const originalName = selectedFile.name || 'video.mp4';
+    const safeName = originalName.replace(/[^a-zA-Z0-9_.\-\s()]/g, '_');
+    const title = safeName.substring(0, safeName.lastIndexOf('.')) || safeName;
+    const streamUrl = `/api/external-videos/stream/${encodeURIComponent(safeName)}`;
 
     const formData = new FormData();
     formData.append('video', selectedFile);
@@ -131,6 +138,13 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
             setUploadEta(`${remainingSec}s left`);
           }
         }
+
+        // Instant Progressive Playback: Start playing in SyncPlay as soon as 2MB header is written on disk
+        if (autoPlay && !hasStartedPlayingRef.current && event.loaded >= Math.min(2 * 1024 * 1024, event.total)) {
+          hasStartedPlayingRef.current = true;
+          onSelectVideo(streamUrl, title);
+          onClose();
+        }
       }
     };
 
@@ -139,14 +153,17 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const response = JSON.parse(xhr.responseText);
-          setUploadSuccess(`"${selectedFile.name}" uploaded successfully to server folder!`);
+          setUploadSuccess(`"${selectedFile.name}" uploaded successfully!`);
           setSelectedFile(null);
           fetchVideos();
-          if (response.video) {
-            setTimeout(() => {
+          if (autoPlay && !hasStartedPlayingRef.current) {
+            hasStartedPlayingRef.current = true;
+            if (response.video) {
               onSelectVideo(response.video.url, response.video.title);
-              onClose();
-            }, 1000);
+            } else {
+              onSelectVideo(streamUrl, title);
+            }
+            onClose();
           }
         } catch (e) {
           setUploadSuccess('Video uploaded successfully!');
@@ -651,7 +668,28 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                   <button
                     type="button"
                     disabled={!selectedFile}
-                    onClick={handleUploadSubmit}
+                    onClick={() => handleUploadSubmit(false)}
+                    style={{
+                      padding: '10px 16px',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: selectedFile ? '#fff' : 'rgba(255, 255, 255, 0.4)',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: selectedFile ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Upload size={14} />
+                    <span>Upload Only</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedFile}
+                    onClick={() => handleUploadSubmit(true)}
                     style={{
                       padding: '10px 20px',
                       background: selectedFile ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
@@ -663,11 +701,12 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                       cursor: selectedFile ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      boxShadow: selectedFile ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none'
                     }}
                   >
-                    <Upload size={15} />
-                    <span>Upload to Server</span>
+                    <Play size={15} fill="currentColor" />
+                    <span>Upload & Play Instantly</span>
                   </button>
                 </div>
               )}

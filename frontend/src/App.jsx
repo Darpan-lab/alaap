@@ -4636,6 +4636,42 @@ function App() {
     });
   };
 
+  const updateBufferedRanges = (video) => {
+    if (!video || !video.buffered || video.buffered.length === 0) {
+      setVideoBufferedRanges([]);
+      return;
+    }
+
+    let effDur = 0;
+    if (jellyfinDurationRef.current && isFinite(jellyfinDurationRef.current) && jellyfinDurationRef.current > 0) {
+      effDur = jellyfinDurationRef.current;
+    } else if (videoDuration && isFinite(videoDuration) && videoDuration > 0) {
+      effDur = videoDuration;
+    } else if (video && video.duration && isFinite(video.duration) && video.duration > 0) {
+      effDur = video.duration;
+    }
+
+    if (!effDur || effDur <= 0) {
+      setVideoBufferedRanges([]);
+      return;
+    }
+
+    const ranges = [];
+    for (let i = 0; i < video.buffered.length; i++) {
+      const bStart = video.buffered.start(i);
+      const bEnd = video.buffered.end(i);
+
+      if (isFinite(bStart) && isFinite(bEnd) && bEnd > bStart) {
+        const startPct = Math.max(0, Math.min(100, (bStart / effDur) * 100));
+        const endPct = Math.max(0, Math.min(100, (bEnd / effDur) * 100));
+        if (endPct > startPct) {
+          ranges.push({ start: startPct, end: endPct });
+        }
+      }
+    }
+    setVideoBufferedRanges(ranges);
+  };
+
   const handleChangeVideo = (url, durationOverride = null) => {
     if (!url) return;
     const targetVideoId = url.trim();
@@ -6845,6 +6881,7 @@ function App() {
                             peerProgressMapRef.current = {};
                             setSyncLagSec(0);
                             handleVideoSeeked(e);
+                            updateBufferedRanges(e.target);
                             setTimeout(() => {
                               ignorePlayerStateChangeRef.current = false;
                             }, 1500);
@@ -6857,6 +6894,7 @@ function App() {
                               if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
                             }
                             handleVideoLoadedMetadata(e);
+                            updateBufferedRanges(e.target);
                           }}
                           onDurationChange={(e) => {
                             if (jellyfinDurationRef.current && jellyfinDurationRef.current > 0) {
@@ -6865,6 +6903,7 @@ function App() {
                               const dur = e.target.duration;
                               if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
                             }
+                            updateBufferedRanges(e.target);
                           }}
                           onTimeUpdate={(e) => {
                             if (!isDraggingTimelineRef.current && !e.target.seeking) {
@@ -6876,31 +6915,10 @@ function App() {
                               const dur = e.target.duration;
                               if (dur && isFinite(dur) && dur > 0) setVideoDuration(dur);
                             }
-                            
-                            const video = e.target;
-                            if (video.duration > 0 && video.buffered.length > 0) {
-                              const ranges = [];
-                              for (let i = 0; i < video.buffered.length; i++) {
-                                ranges.push({
-                                  start: (video.buffered.start(i) / video.duration) * 100,
-                                  end: (video.buffered.end(i) / video.duration) * 100
-                                });
-                              }
-                              setVideoBufferedRanges(ranges);
-                            }
+                            updateBufferedRanges(e.target);
                           }}
                           onProgress={(e) => {
-                            const video = e.target;
-                            if (video.duration > 0 && video.buffered.length > 0) {
-                              const ranges = [];
-                              for (let i = 0; i < video.buffered.length; i++) {
-                                ranges.push({
-                                  start: (video.buffered.start(i) / video.duration) * 100,
-                                  end: (video.buffered.end(i) / video.duration) * 100
-                                });
-                              }
-                              setVideoBufferedRanges(ranges);
-                            }
+                            updateBufferedRanges(e.target);
                           }}
                           onClick={handleVideoAreaClick}
                         />

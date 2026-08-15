@@ -1398,6 +1398,11 @@ mongoose.connect(MONGODB_URI)
       console.error('[Storage Safety] Startup cleanup error:', err);
     });
     
+    // Set HTTP server timeouts to handle large video file uploads (2GB+)
+    server.keepAliveTimeout = 7200000; // 2 hours
+    server.headersTimeout = 7205000;   // 2 hours + 5s
+    server.requestTimeout = 0;         // Disable request timeout for large uploads
+
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
