@@ -178,10 +178,11 @@ router.post('/upload', auth, async (req, res) => {
   }
 });
 
-// Serve external video file with HTTP 206 Range support for video buffering
+// Serve external video file with HTTP 206 Range support & CORS headers for HTML5 video buffering
 router.get('/stream/:filename', async (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
+    const rawFilename = req.params.filename;
+    const filename = path.basename(decodeURIComponent(rawFilename));
     const filePath = path.join(externalDir, filename);
 
     if (!fs.existsSync(filePath)) {
@@ -206,6 +207,17 @@ router.get('/stream/:filename', async (req, res) => {
     };
     const contentType = contentTypeMap[ext] || 'video/mp4';
 
+    // CORS & Range exposure headers required for HTML5 <video crossOrigin="anonymous">
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Authorization, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
@@ -218,27 +230,29 @@ router.get('/stream/:filename', async (req, res) => {
 
       const chunksize = (end - start) + 1;
       const file = fs.createReadStream(filePath, { start, end });
-      const head = {
+      res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
         'Content-Type': contentType,
-        'Cache-Control': 'no-cache'
-      };
-      res.writeHead(206, head);
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type',
+        'Cache-Control': 'public, max-age=3600'
+      });
       file.pipe(res);
     } else {
-      const head = {
+      res.writeHead(200, {
         'Content-Length': fileSize,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-cache'
-      };
-      res.writeHead(200, head);
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type',
+        'Cache-Control': 'public, max-age=3600'
+      });
       fs.createReadStream(filePath).pipe(res);
     }
   } catch (err) {
-    console.error('Error serving external video:', err);
+    console.error('Error serving external video stream:', err);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to serve video.' });
     }
