@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { auth } from '../middleware/auth.js';
 import User from '../models/User.js';
+import VideoDeletionRequest from '../models/VideoDeletionRequest.js';
+import ExternalVideo from '../models/ExternalVideo.js';
+import Chat from '../models/Chat.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,19 +57,23 @@ function extractTitle(filename) {
 }
 
 const checkPermission = async (req) => {
-  if (!req.user) return false;
-  if (req.user.role === 'Root') return true;
+  if (!req.user) return { canUse: false, canUpload: false };
+  if (req.user.role === 'Root') return { canUse: true, canUpload: true };
   const dbUser = await User.findById(req.user._id || req.user.id);
-  if (!dbUser) return false;
-  return dbUser.role === 'Root' || Boolean(dbUser.externalVideosEnabled);
+  if (!dbUser) return { canUse: false, canUpload: false };
+  const isRoot = dbUser.role === 'Root';
+  const canUse = isRoot || Boolean(dbUser.externalVideosEnabled);
+  const canUpload = isRoot || (Boolean(dbUser.externalVideosEnabled) && Boolean(dbUser.externalVideosUploadEnabled));
+  return { canUse, canUpload };
 };
 
 // Check user permission status
 router.get('/status', auth, async (req, res) => {
   try {
-    const allowed = await checkPermission(req);
+    const perm = await checkPermission(req);
     res.json({
-      canUseExternalVideos: allowed,
+      canUseExternalVideos: perm.canUse,
+      canUploadExternalVideos: perm.canUpload,
       configured: true,
       globalEnabled: true
     });
@@ -79,14 +86,24 @@ router.get('/status', auth, async (req, res) => {
 // Get list of external videos
 router.get('/list', auth, async (req, res) => {
   try {
-    const allowed = await checkPermission(req);
-    if (!allowed) {
+    const perm = await checkPermission(req);
+    if (!perm.canUse) {
       return res.status(403).json({ error: 'You do not have permission to access external server videos.' });
     }
 
     if (!fs.existsSync(externalDir)) {
       fs.mkdirSync(externalDir, { recursive: true });
     }
+
+    const activeChatId = req.query.chatId || null;
+    const currentUserId = (req.user._id || req.user.id)?.toString();
+    const isRoot = req.user.role === 'Root';
+
+    const externalMetas = await ExternalVideo.find();
+    const metaMap = new Map(externalMetas.map(m => [m.filename, m]));
+
+    const pendingRequests = await VideoDeletionRequest.find({ status: 'pending' });
+    const pendingSet = new Set(pendingRequests.map(r => r.filename));
 
     const files = await fs.promises.readdir(externalDir);
     const videoFiles = [];
@@ -98,12 +115,32 @@ router.get('/list', auth, async (req, res) => {
         try {
           const stats = await fs.promises.stat(filePath);
           if (stats.isFile()) {
+            const meta = metaMap.get(filename);
+            const isPrivate = meta ? Boolean(meta.isPrivate) : false;
+            const videoChatId = meta?.chatId ? meta.chatId.toString() : null;
+            const uploadedBy = meta?.uploadedBy ? meta.uploadedBy.toString() : null;
+            const uploadedByName = meta?.uploadedByName || 'Server Admin';
+
+            // Filter out private videos not belonging to this chat (unless uploader or Root)
+            if (isPrivate) {
+              const isUploader = currentUserId && uploadedBy && currentUserId === uploadedBy;
+              const isSameChat = activeChatId && videoChatId && activeChatId.toString() === videoChatId;
+              if (!isRoot && !isUploader && !isSameChat) {
+                continue; // Skip private video
+              }
+            }
+
             videoFiles.push({
               filename,
               title: extractTitle(filename),
               size: stats.size,
               formattedSize: formatBytes(stats.size),
               updatedAt: stats.mtime,
+              deletionRequested: pendingSet.has(filename),
+              uploadedByName,
+              uploadedBy,
+              isPrivate,
+              chatId: videoChatId,
               url: `/api/external-videos/stream/${encodeURIComponent(filename)}`
             });
           }
@@ -125,6 +162,53 @@ router.get('/list', auth, async (req, res) => {
   }
 });
 
+// Submit a video deletion request (Any user with server folder access)
+router.post('/request-delete', auth, async (req, res) => {
+  try {
+    const perm = await checkPermission(req);
+    if (!perm.canUse) {
+      return res.status(403).json({ error: 'You do not have permission to access external videos.' });
+    }
+
+    const { filename } = req.body;
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required.' });
+    }
+
+    const filePath = path.join(externalDir, path.basename(filename));
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Video file not found on server.' });
+    }
+
+    let request = await VideoDeletionRequest.findOne({ filename, status: 'pending' });
+    if (request) {
+      return res.status(400).json({ error: 'Deletion request already pending for this video file.' });
+    }
+
+    request = new VideoDeletionRequest({
+      filename,
+      requestedBy: req.user._id || req.user.id,
+      status: 'pending'
+    });
+
+    await request.save();
+
+    if (req.io) {
+      req.io.emit('video_deletion_request_updated');
+      req.io.emit('external_videos_status_updated');
+    }
+
+    res.json({
+      success: true,
+      message: 'Video deletion request submitted to Root administrator.',
+      request
+    });
+  } catch (err) {
+    console.error('Request video deletion error:', err);
+    res.status(500).json({ error: 'Failed to submit video deletion request.' });
+  }
+});
+
 // Upload video file directly to /backend/uploads/external/
 router.post('/upload', auth, async (req, res) => {
   // Prevent socket timeout during large file uploads (2GB+)
@@ -135,8 +219,8 @@ router.post('/upload', auth, async (req, res) => {
   }
 
   try {
-    const allowed = await checkPermission(req);
-    if (!allowed) {
+    const perm = await checkPermission(req);
+    if (!perm.canUpload) {
       return res.status(403).json({ error: 'You do not have permission to upload external videos.' });
     }
 
@@ -153,12 +237,37 @@ router.post('/upload', auth, async (req, res) => {
       const filename = req.file.filename;
       const stats = await fs.promises.stat(req.file.path);
 
+      const isPrivate = req.body.isPrivate === 'true' || req.body.isPrivate === true;
+      const chatId = req.body.chatId && req.body.chatId !== 'null' && req.body.chatId !== 'undefined' ? req.body.chatId : null;
+
+      // Upsert ExternalVideo metadata record
+      let meta = await ExternalVideo.findOne({ filename });
+      if (!meta) {
+        meta = new ExternalVideo({
+          filename,
+          uploadedBy: req.user._id || req.user.id,
+          uploadedByName: req.user.username || 'User',
+          isPrivate,
+          chatId: isPrivate ? chatId : null
+        });
+      } else {
+        meta.uploadedBy = req.user._id || req.user.id;
+        meta.uploadedByName = req.user.username || 'User';
+        meta.isPrivate = isPrivate;
+        meta.chatId = isPrivate ? chatId : null;
+      }
+      await meta.save();
+
       const videoData = {
         filename,
         title: extractTitle(filename),
         size: stats.size,
         formattedSize: formatBytes(stats.size),
         updatedAt: stats.mtime,
+        uploadedByName: meta.uploadedByName,
+        uploadedBy: meta.uploadedBy,
+        isPrivate: meta.isPrivate,
+        chatId: meta.chatId,
         url: `/api/external-videos/stream/${encodeURIComponent(filename)}`
       };
 

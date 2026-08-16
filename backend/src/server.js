@@ -408,6 +408,7 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
     eta: '',
     downloadedSize: '',
     totalSize: '',
+    username,
     chatIds: new Set([chatId])
   };
   activeDownloads.set(videoKey, downloadInfo);
@@ -420,7 +421,8 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
     speed: '',
     eta: '',
     downloadedSize: '',
-    totalSize: ''
+    totalSize: '',
+    downloadingBy: username
   });
   
   const binary = getYtdlpBinary();
@@ -474,7 +476,8 @@ function startVideoDownload(chatId, inputUrl, io, userId, username) {
       speed: downloadInfo.speed,
       eta: downloadInfo.eta,
       downloadedSize: downloadInfo.downloadedSize,
-      totalSize: downloadInfo.totalSize
+      totalSize: downloadInfo.totalSize,
+      downloadingBy: downloadInfo.username || username
     });
   };
 
@@ -1362,24 +1365,25 @@ const seedDatabase = async () => {
       console.log('Seeded setting: inviteCodes = []');
     }
 
-    // 2. Seed initial admin user if database is empty
+    // 2. Seed initial root user if database is empty
     const userCount = await User.countDocuments();
     if (userCount === 0) {
       const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash('admin123456', salt);
+      const passwordHash = await bcrypt.hash('root123456', salt);
 
-      const adminUser = new User({
-        username: 'admin',
+      const rootUser = new User({
+        username: 'root',
         password: passwordHash,
         isAdmin: true,
+        role: 'Root',
         status: 'offline'
       });
 
-      await adminUser.save();
+      await rootUser.save();
       console.log('--------------------------------------------------');
-      console.log('DATABASE IS EMPTY. SEEDED INITIAL ADMIN USER:');
-      console.log('Username: admin');
-      console.log('Password: admin123456');
+      console.log('DATABASE IS EMPTY. SEEDED INITIAL ROOT USER:');
+      console.log('Username: root');
+      console.log('Password: root123456');
       console.log('--------------------------------------------------');
     }
 

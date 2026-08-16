@@ -615,36 +615,69 @@ export function SyncPlayPanel({
             </div>
 
             <div style={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center' }}>
-              <input 
-                type="text"
-                placeholder="Paste video link..."
-                className="sync-play-url-input"
-                style={{ width: '100%', paddingRight: '50px' }}
-                value={syncPlayInputUrl}
-                onChange={(e) => setSyncPlayInputUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleChangeVideo(syncPlayInputUrl);
-                }}
-              />
-              <button 
-                type="button"
-                className="btn btn-primary btn-sm sync-play-load-btn"
-                style={{
-                  position: 'absolute',
-                  right: '0',
-                  top: '0',
-                  padding: '0 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: '100%',
-                  borderRadius: '0 var(--radius-sm) var(--radius-sm) 0'
-                }}
-                onClick={() => handleChangeVideo(syncPlayInputUrl)}
-                title="Load Video"
-              >
-                <ArrowRight size={16} />
-              </button>
+              {(() => {
+                const isDownloadingVideo = activeChat?.syncPlay?.downloadStatus === 'downloading';
+                const downloadingUser = activeChat?.syncPlay?.downloadingBy || activeChat?.syncPlay?.senderName;
+                const placeholderText = isDownloadingVideo 
+                  ? (downloadingUser ? `Downloading by ${downloadingUser}... Please wait` : 'Downloading video via link... Please wait')
+                  : "Paste video link...";
+
+                return (
+                  <>
+                    <input 
+                      type="text"
+                      placeholder={placeholderText}
+                      disabled={isDownloadingVideo}
+                      className="sync-play-url-input"
+                      style={{ 
+                        width: '100%', 
+                        paddingRight: '50px',
+                        opacity: isDownloadingVideo ? 0.6 : 1,
+                        cursor: isDownloadingVideo ? 'not-allowed' : 'text'
+                      }}
+                      value={syncPlayInputUrl}
+                      onChange={(e) => setSyncPlayInputUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (isDownloadingVideo) {
+                            showAlert('A video download is currently in progress. Please wait for it to complete.');
+                            return;
+                          }
+                          handleChangeVideo(syncPlayInputUrl);
+                        }
+                      }}
+                    />
+                    <button 
+                      type="button"
+                      disabled={isDownloadingVideo}
+                      className="btn btn-primary btn-sm sync-play-load-btn"
+                      style={{
+                        position: 'absolute',
+                        right: '0',
+                        top: '0',
+                        padding: '0 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '100%',
+                        borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                        opacity: isDownloadingVideo ? 0.5 : 1,
+                        cursor: isDownloadingVideo ? 'not-allowed' : 'pointer'
+                      }}
+                      onClick={() => {
+                        if (isDownloadingVideo) {
+                          showAlert('A video download is currently in progress. Please wait for it to complete.');
+                          return;
+                        }
+                        handleChangeVideo(syncPlayInputUrl);
+                      }}
+                      title={isDownloadingVideo ? "Video download in progress..." : "Load Video"}
+                    >
+                      <ArrowRight size={16} />
+                    </button>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="sync-play-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>

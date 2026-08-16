@@ -129,21 +129,41 @@ export function Sidebar({
   };
 
   const getChatDetails = (chat) => {
-    if (!chat) return { name: '', avatar: '', status: 'offline' };
+    if (!chat) return { name: '', avatar: '', status: 'offline', isSelf: false };
     if (chat.isGroup) {
       return { 
         name: chat.name, 
         avatar: chat.name.substring(0, 2).toUpperCase(), 
         status: 'group',
-        membersCount: chat.members?.length || 0
+        membersCount: chat.members?.length || 0,
+        isSelf: false
       };
     }
-    const otherUser = chat.members.find(m => m._id !== user?.id);
+    const currentId = user?._id || user?.id;
+    const isSelf = !chat.isGroup && (
+      chat.members?.length === 1 || 
+      (chat.members?.length > 0 && chat.members.every(m => (m._id || m).toString() === currentId?.toString()))
+    );
+
+    if (isSelf) {
+      const myUser = chat.members?.find(m => (m._id || m).toString() === currentId?.toString()) || user;
+      const displayUsername = myUser?.username || user?.username || 'You';
+      return {
+        name: `${displayUsername} (You)`,
+        avatar: myUser?.profilePic || displayUsername.substring(0, 2).toUpperCase(),
+        status: 'online',
+        isAdmin: myUser?.isAdmin,
+        isSelf: true
+      };
+    }
+
+    const otherUser = chat.members?.find(m => (m._id || m).toString() !== currentId?.toString());
     return {
       name: otherUser ? otherUser.username : 'Unknown User',
       avatar: otherUser?.profilePic || (otherUser ? otherUser.username.substring(0, 2).toUpperCase() : '??'),
       status: otherUser?.status || 'offline',
-      isAdmin: otherUser?.isAdmin
+      isAdmin: otherUser?.isAdmin,
+      isSelf: false
     };
   };
 
@@ -305,12 +325,25 @@ export function Sidebar({
                   <div className={`status-dot ${resultUser.status}`}></div>
                 </div>
                 <div className="search-user-info">
-                  <span className="search-username">{resultUser.username}</span>
-                  {resultUser.isAdmin && (
-                    <span className={`badge-admin ${resultUser.role === 'Admin' ? 'subadmin' : ''}`}>
-                      {resultUser.role || (resultUser.username === 'rkdarpan' ? 'Root' : 'Admin')}
-                    </span>
-                  )}
+                  <span className="search-username">
+                    {resultUser.username}
+                    {(resultUser._id === user?.id || resultUser._id === user?._id) && (
+                      <span style={{ marginLeft: '6px', fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600 }}>(You)</span>
+                    )}
+                  </span>
+                  {(() => {
+                    const isRoot = resultUser.role === 'Root' || resultUser.username === 'rkdarpan';
+                    const isAdmin = resultUser.role === 'Admin' || (resultUser.isAdmin && !isRoot);
+                    const displayRole = isRoot ? 'Root' : isAdmin ? 'Admin' : null;
+
+                    if (!displayRole) return null;
+
+                    return (
+                      <span className={`badge-admin ${isRoot ? 'root' : 'subadmin'}`}>
+                        {displayRole}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <ChevronRight size={16} className="chevron" />
               </div>

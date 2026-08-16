@@ -21,7 +21,6 @@ router.get('/search', auth, async (req, res) => {
     const users = await User.find({
       username: { $regex: username, $options: 'i' },
       _id: { 
-        $ne: req.user._id, // exclude self
         $nin: blockedByList // exclude users who blocked me
       }
     })

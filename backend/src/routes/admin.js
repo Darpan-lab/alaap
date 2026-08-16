@@ -1,11 +1,20 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import User from '../models/User.js';
 import Chat from '../models/Chat.js';
 import Message from '../models/Message.js';
 import Setting from '../models/Setting.js';
+import VideoDeletionRequest from '../models/VideoDeletionRequest.js';
+import ExternalVideo from '../models/ExternalVideo.js';
 import { auth, adminAuth } from '../middleware/auth.js';
 import { clearJellyfinCache } from './jellyfin.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const externalDir = path.join(__dirname, '../../uploads/external');
 
 const router = express.Router();
 
@@ -51,16 +60,22 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
 
     // Get all users for admin list
     const users = await User.find({})
-      .select('username isAdmin role status profilePic jellyfinEnabled externalVideosEnabled createdAt')
+      .select('username isAdmin role status profilePic jellyfinEnabled externalVideosEnabled externalVideosUploadEnabled createdAt')
       .sort({ createdAt: -1 });
+
+    // Helper to get the primary / first root user (earliest created root user or earliest user in DB)
+    const firstRootUser = await User.findOne({ role: 'Root' }).sort({ createdAt: 1 }) || await User.findOne().sort({ createdAt: 1 });
 
     const mappedUsers = users.map(u => {
       const uObj = u.toObject();
-      if (uObj.isAdmin && (!uObj.role || uObj.role === 'Regular')) {
+      const isFirst = firstRootUser && u._id.toString() === firstRootUser._id.toString();
+      if (isFirst || (uObj.isAdmin && (!uObj.role || uObj.role === 'Regular'))) {
         uObj.role = 'Root';
       }
+      uObj.isFirstRoot = isFirst;
       uObj.jellyfinEnabled = !!uObj.jellyfinEnabled;
       uObj.externalVideosEnabled = !!uObj.externalVideosEnabled;
+      uObj.externalVideosUploadEnabled = !!uObj.externalVideosUploadEnabled;
       return uObj;
     });
 
@@ -99,21 +114,20 @@ router.post('/settings', auth, adminAuth, async (req, res) => {
       await updateSetting('inviteOnlyEnabled', inviteOnlyEnabled);
     }
     if (jellyfinUrl !== undefined) {
-      await updateSetting('jellyfinUrl', typeof jellyfinUrl === 'string' ? jellyfinUrl.trim() : '');
+      await updateSetting('jellyfinUrl', jellyfinUrl);
     }
     if (jellyfinUsername !== undefined) {
-      await updateSetting('jellyfinUsername', typeof jellyfinUsername === 'string' ? jellyfinUsername.trim() : '');
+      await updateSetting('jellyfinUsername', jellyfinUsername);
     }
     if (jellyfinPassword !== undefined && jellyfinPassword !== '********') {
-      await updateSetting('jellyfinPassword', typeof jellyfinPassword === 'string' ? jellyfinPassword.trim() : '');
+      await updateSetting('jellyfinPassword', jellyfinPassword);
     }
     if (jellyfinEnabled !== undefined) {
-      await updateSetting('jellyfinEnabled', jellyfinEnabled ? 'true' : 'false');
-      if (req.io) req.io.emit('jellyfin_status_updated');
+      await updateSetting('jellyfinEnabled', jellyfinEnabled);
     }
-    if (jellyfinUrl !== undefined || jellyfinUsername !== undefined || jellyfinPassword !== undefined) {
-      clearJellyfinCache();
-      if (req.io) req.io.emit('jellyfin_status_updated');
+
+    if (req.io) {
+      req.io.emit('admin_settings_updated');
     }
 
     res.json({ message: 'Settings updated successfully.' });
@@ -206,6 +220,9 @@ router.put('/users/:userId/toggle-external-videos', auth, adminAuth, async (req,
       return res.status(404).json({ error: 'User not found.' });
     }
     user.externalVideosEnabled = enabled !== undefined ? Boolean(enabled) : !user.externalVideosEnabled;
+    if (!user.externalVideosEnabled) {
+      user.externalVideosUploadEnabled = false; // Automatically disable upload if main access is disabled
+    }
     await user.save();
     if (req.io) {
       req.io.emit('external_videos_status_updated');
@@ -213,11 +230,138 @@ router.put('/users/:userId/toggle-external-videos', auth, adminAuth, async (req,
     res.json({
       success: true,
       message: `External videos access ${user.externalVideosEnabled ? 'enabled' : 'disabled'} for ${user.username}.`,
-      externalVideosEnabled: user.externalVideosEnabled
+      externalVideosEnabled: user.externalVideosEnabled,
+      externalVideosUploadEnabled: user.externalVideosUploadEnabled
     });
   } catch (error) {
     console.error('Toggle User External Videos Error:', error);
     res.status(500).json({ error: 'Failed to update user external videos permission.' });
+  }
+});
+
+// Toggle User External Videos Upload Permission (Root only)
+router.put('/users/:userId/toggle-external-videos-upload', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can toggle External Videos upload permissions.' });
+    }
+    const { userId } = req.params;
+    const { enabled } = req.body;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (!user.externalVideosEnabled && (enabled === true || (enabled === undefined && !user.externalVideosUploadEnabled))) {
+      return res.status(400).json({ error: 'Cannot enable upload access when Server Folder access is disabled.' });
+    }
+    user.externalVideosUploadEnabled = enabled !== undefined ? Boolean(enabled) : !user.externalVideosUploadEnabled;
+    await user.save();
+    if (req.io) {
+      req.io.emit('external_videos_status_updated');
+    }
+    res.json({
+      success: true,
+      message: `External videos upload access ${user.externalVideosUploadEnabled ? 'enabled' : 'disabled'} for ${user.username}.`,
+      externalVideosUploadEnabled: user.externalVideosUploadEnabled
+    });
+  } catch (error) {
+    console.error('Toggle User External Videos Upload Error:', error);
+    res.status(500).json({ error: 'Failed to update user external videos upload permission.' });
+  }
+});
+
+// Get all pending video deletion requests (Root only)
+router.get('/video-deletion-requests', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can access video deletion requests.' });
+    }
+
+    const requests = await VideoDeletionRequest.find({ status: 'pending' })
+      .populate('requestedBy', 'username role profilePic')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      requests
+    });
+  } catch (error) {
+    console.error('Fetch Video Deletion Requests Error:', error);
+    res.status(500).json({ error: 'Failed to fetch video deletion requests.' });
+  }
+});
+
+// Approve & Delete Video Request (Root only)
+router.delete('/video-deletion-requests/:requestId', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can approve video deletions.' });
+    }
+
+    const { requestId } = req.params;
+    const request = await VideoDeletionRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Deletion request not found.' });
+    }
+
+    // Delete physical file from /uploads/external/
+    const filePath = path.join(externalDir, path.basename(request.filename));
+    if (fs.existsSync(filePath)) {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch (err) {
+        console.error(`Failed to delete physical file ${request.filename}:`, err);
+      }
+    }
+
+    // Delete request & any duplicate pending requests for same file
+    await VideoDeletionRequest.deleteMany({ filename: request.filename });
+    await ExternalVideo.deleteMany({ filename: request.filename });
+
+    if (req.io) {
+      req.io.emit('video_deletion_request_updated');
+      req.io.emit('external_videos_status_updated');
+    }
+
+    res.json({
+      success: true,
+      message: `Video file "${request.filename}" deleted successfully.`
+    });
+  } catch (error) {
+    console.error('Approve Video Deletion Error:', error);
+    res.status(500).json({ error: 'Failed to delete video file.' });
+  }
+});
+
+// Reject Video Deletion Request (Root only)
+router.put('/video-deletion-requests/:requestId/reject', auth, adminAuth, async (req, res) => {
+  try {
+    const isRoot = req.user.role === 'Root' || (req.user.isAdmin && !req.user.role);
+    if (!isRoot) {
+      return res.status(403).json({ error: 'Only Root users can reject video deletion requests.' });
+    }
+
+    const { requestId } = req.params;
+    const request = await VideoDeletionRequest.findByIdAndDelete(requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Deletion request not found.' });
+    }
+
+    if (req.io) {
+      req.io.emit('video_deletion_request_updated');
+      req.io.emit('external_videos_status_updated');
+    }
+
+    res.json({
+      success: true,
+      message: `Deletion request for "${request.filename}" dismissed.`
+    });
+  } catch (error) {
+    console.error('Reject Video Deletion Error:', error);
+    res.status(500).json({ error: 'Failed to reject deletion request.' });
   }
 });
 
@@ -288,8 +432,9 @@ router.delete('/users/:userId', auth, adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    if (user.username === 'rkdarpan') {
-      return res.status(403).json({ error: 'The primary system administrator account (rkdarpan) cannot be deleted.' });
+    const firstRootUser = await User.findOne({ role: 'Root' }).sort({ createdAt: 1 }) || await User.findOne().sort({ createdAt: 1 });
+    if (firstRootUser && user._id.toString() === firstRootUser._id.toString()) {
+      return res.status(403).json({ error: 'The primary system administrator account cannot be deleted.' });
     }
 
     if (req.user.role === 'Admin') {
@@ -386,8 +531,9 @@ router.put('/users/:userId', auth, adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    if (user.username === 'rkdarpan' && req.user._id.toString() !== user._id.toString()) {
-      return res.status(403).json({ error: 'The primary system administrator account (rkdarpan) cannot be edited by other users.' });
+    const firstRootUser = await User.findOne({ role: 'Root' }).sort({ createdAt: 1 }) || await User.findOne().sort({ createdAt: 1 });
+    if (firstRootUser && user._id.toString() === firstRootUser._id.toString() && req.user._id.toString() !== user._id.toString()) {
+      return res.status(403).json({ error: 'The primary system administrator account cannot be edited by other users.' });
     }
 
     if (req.user.role === 'Admin') {

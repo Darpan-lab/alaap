@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Loader2, Shield, X, ToggleRight, ToggleLeft, Edit, Trash2, 
-  Users, MessageSquare, Search, Send, Play, Key, User, Lock, Sparkles, Tv
+  Users, MessageSquare, Search, Send, Play, Key, User, Lock, Sparkles, Tv, Upload
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { formatBDMessageTime } from '../utils/dateUtils';
@@ -73,7 +73,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
 
   const handleToggleUserExternalVideos = async (targetUser) => {
     const nextEnabled = !targetUser.externalVideosEnabled;
-    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: nextEnabled } : u));
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosEnabled: nextEnabled, externalVideosUploadEnabled: nextEnabled ? u.externalVideosUploadEnabled : false } : u));
     try {
       const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-external-videos`, {
         method: 'PUT',
@@ -96,10 +96,115 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
       showAlert('Error connecting to server.');
     }
   };
+
+  const handleToggleUserExternalVideosUpload = async (targetUser) => {
+    if (!targetUser.externalVideosEnabled) {
+      showAlert('Server Folder access must be enabled before enabling upload access.');
+      return;
+    }
+    const nextEnabled = !targetUser.externalVideosUploadEnabled;
+    setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosUploadEnabled: nextEnabled } : u));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${targetUser._id}/toggle-external-videos-upload`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      if (response.ok) {
+        fetchAdminData();
+      } else {
+        const data = await response.json();
+        setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosUploadEnabled: targetUser.externalVideosUploadEnabled } : u));
+        showAlert(data.error || 'Failed to toggle upload permission.');
+      }
+    } catch (err) {
+      console.error(err);
+      setUsers(prev => prev.map(u => u._id === targetUser._id ? { ...u, externalVideosUploadEnabled: targetUser.externalVideosUploadEnabled } : u));
+      showAlert('Error connecting to server.');
+    }
+  };
   
-  const [activeTab, setActiveTab] = useState('system'); // 'system', 'groups', 'conversations'
+  const [activeTab, setActiveTab] = useState('system'); // 'system', 'groups', 'conversations', 'deletion_requests'
   const [groups, setGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+
+  const [deletionRequests, setDeletionRequests] = useState([]);
+  const [loadingDeletionRequests, setLoadingDeletionRequests] = useState(false);
+
+  const fetchDeletionRequests = async () => {
+    if (user?.role !== 'Root') return;
+    setLoadingDeletionRequests(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/video-deletion-requests`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDeletionRequests(data.requests || []);
+      }
+    } catch (err) {
+      console.error('Fetch deletion requests error:', err);
+    } finally {
+      setLoadingDeletionRequests(false);
+    }
+  };
+
+  const handleApproveVideoDeletion = async (requestId, filename) => {
+    if (!await showConfirm(`Are you sure you want to approve deletion of video "${filename}"? This will permanently remove the physical file from the server folder.`)) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/video-deletion-requests/${requestId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setDeletionRequests(prev => prev.filter(r => r._id !== requestId));
+      } else {
+        showAlert(data.error || 'Failed to delete video file.');
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('Error approving video deletion.');
+    }
+  };
+
+  const handleRejectVideoDeletion = async (requestId, filename) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/video-deletion-requests/${requestId}/reject`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setDeletionRequests(prev => prev.filter(r => r._id !== requestId));
+        showAlert(data.message || 'Deletion request dismissed.');
+      } else {
+        showAlert(data.error || 'Failed to dismiss deletion request.');
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('Error dismissing deletion request.');
+    }
+  };
+
+  useEffect(() => {
+    if (user?.role === 'Root') {
+      fetchDeletionRequests();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!socket || user?.role !== 'Root') return;
+    const handleUpdateRequest = () => {
+      fetchDeletionRequests();
+    };
+    socket.on('video_deletion_request_updated', handleUpdateRequest);
+    return () => socket.off('video_deletion_request_updated', handleUpdateRequest);
+  }, [socket, user]);
 
   const [user1Id, setUser1Id] = useState('');
   const [user2Id, setUser2Id] = useState('');
@@ -286,8 +391,9 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
   const [editUserSuccess, setEditUserSuccess] = useState('');
 
   const openEditUserModal = (u) => {
-    if (u.username === 'rkdarpan' && user?.username !== 'rkdarpan') {
-      showAlert("The primary system administrator account (rkdarpan) cannot be edited by other users.");
+    const isSelf = u._id === user?.id || u._id === user?._id;
+    if (u.isFirstRoot && !isSelf) {
+      showAlert("The primary system administrator account cannot be edited by other users.");
       return;
     }
     if (user?.role === 'Admin') {
@@ -530,8 +636,8 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
       return;
     }
 
-    if (username === 'rkdarpan') {
-      showAlert("The primary system administrator account (rkdarpan) cannot be deleted.");
+    if (u.isFirstRoot) {
+      showAlert("The primary system administrator account cannot be deleted.");
       return;
     }
 
@@ -616,6 +722,24 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
             >
               User Conversations
             </button>
+            {user?.role === 'Root' && (
+              <button 
+                className={`admin-tab-btn ${activeTab === 'deletion_requests' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('deletion_requests');
+                  fetchDeletionRequests();
+                }}
+                style={{ padding: '12px 16px', borderBottom: activeTab === 'deletion_requests' ? '2px solid #ef4444' : '2px solid transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer', fontWeight: '600', color: activeTab === 'deletion_requests' ? '#f87171' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Trash2 size={16} />
+                <span>Video Deletion Requests</span>
+                {deletionRequests.length > 0 && (
+                  <span style={{ background: '#ef4444', color: '#fff', fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '10px' }}>
+                    {deletionRequests.length}
+                  </span>
+                )}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -885,7 +1009,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                       <td style={{ textAlign: 'center' }}>
                         {u.role === 'Root' || u.isAdmin ? (
                           <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
-                            Root (Always On)
+                            Enabled
                           </span>
                         ) : user?.role === 'Root' ? (
                           <button
@@ -920,41 +1044,87 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {u.role === 'Root' || u.isAdmin ? (
-                          <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
-                            Root (Always On)
-                          </span>
-                        ) : user?.role === 'Root' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleUserExternalVideos(u)}
-                            title={u.externalVideosEnabled ? "Click to disable External Videos access" : "Click to enable External Videos access"}
-                            style={{
-                              cursor: 'pointer',
-                              border: u.externalVideosEnabled ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--glass-border)',
-                              background: u.externalVideosEnabled ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
-                              color: u.externalVideosEnabled ? '#60a5fa' : 'var(--text-muted)',
-                              fontWeight: '600',
-                              fontSize: '0.75rem',
-                              padding: '4px 10px',
-                              borderRadius: '8px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            {u.externalVideosEnabled ? '✓ Enabled' : '✕ Disabled'}
-                          </button>
-                        ) : u.externalVideosEnabled ? (
-                          <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: '600', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
-                            Enabled
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                            Disabled
-                          </span>
-                        )}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          {u.role === 'Root' || u.isAdmin ? (
+                            <span style={{ fontSize: '0.75rem', color: '#4ade80', fontWeight: '600', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                              Enabled
+                            </span>
+                          ) : user?.role === 'Root' ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUserExternalVideos(u)}
+                                title={u.externalVideosEnabled ? "Click to disable External Videos access" : "Click to enable External Videos access"}
+                                style={{
+                                  cursor: 'pointer',
+                                  border: u.externalVideosEnabled ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--glass-border)',
+                                  background: u.externalVideosEnabled ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                                  color: u.externalVideosEnabled ? '#60a5fa' : 'var(--text-muted)',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem',
+                                  padding: '4px 10px',
+                                  borderRadius: '8px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                {u.externalVideosEnabled ? '✓ Enabled' : '✕ Disabled'}
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={!u.externalVideosEnabled}
+                                onClick={() => handleToggleUserExternalVideosUpload(u)}
+                                title={!u.externalVideosEnabled ? "Server Folder access must be enabled first" : u.externalVideosUploadEnabled ? "Click to disable Video Upload permission" : "Click to enable Video Upload permission"}
+                                style={{
+                                  cursor: !u.externalVideosEnabled ? 'not-allowed' : 'pointer',
+                                  opacity: !u.externalVideosEnabled ? 0.4 : 1,
+                                  border: u.externalVideosEnabled && u.externalVideosUploadEnabled ? '1px solid rgba(59,130,246,0.5)' : '1px solid var(--glass-border)',
+                                  background: u.externalVideosEnabled && u.externalVideosUploadEnabled ? 'rgba(59,130,246,0.22)' : 'rgba(255,255,255,0.05)',
+                                  color: u.externalVideosEnabled && u.externalVideosUploadEnabled ? '#60a5fa' : 'var(--text-muted)',
+                                  padding: '4px 7px',
+                                  borderRadius: '8px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.2s',
+                                  boxShadow: u.externalVideosEnabled && u.externalVideosUploadEnabled ? '0 0 8px rgba(59,130,246,0.3)' : 'none'
+                                }}
+                              >
+                                <Upload size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {u.externalVideosEnabled ? (
+                                <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: '600', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
+                                  Enabled
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                                  Disabled
+                                </span>
+                              )}
+
+                              <span
+                                style={{
+                                  opacity: u.externalVideosEnabled && u.externalVideosUploadEnabled ? 1 : 0.4,
+                                  border: u.externalVideosEnabled && u.externalVideosUploadEnabled ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--glass-border)',
+                                  background: u.externalVideosEnabled && u.externalVideosUploadEnabled ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.05)',
+                                  color: u.externalVideosEnabled && u.externalVideosUploadEnabled ? '#60a5fa' : 'var(--text-muted)',
+                                  padding: '2px 6px',
+                                  borderRadius: '8px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <Upload size={12} />
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <span className={`status-text ${u.status}`}>
@@ -1264,6 +1434,110 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
               </form>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'deletion_requests' && user?.role === 'Root' && (
+        <div className="admin-deletion-requests-view animate-fade-in" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="admin-card glass-panel" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Trash2 size={20} style={{ color: '#ef4444' }} />
+                  <span>Server Folder Video Deletion Requests</span>
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Review user deletion requests for videos stored in server folder <code style={{ color: '#60a5fa' }}>/uploads/external/</code>. Only Root accounts can accept and execute file deletions.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={fetchDeletionRequests}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <RefreshCw size={14} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {loadingDeletionRequests ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '20px' }}>
+                <Loader2 className="animate-spin" size={20} />
+                <span>Loading deletion requests...</span>
+              </div>
+            ) : deletionRequests.length === 0 ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>No pending video deletion requests.</p>
+              </div>
+            ) : (
+              <div className="table-wrapper scroll-container">
+                <table className="users-table">
+                  <thead>
+                    <tr>
+                      <th>Video Filename</th>
+                      <th>Requested By</th>
+                      <th>Requested At (Date & Time)</th>
+                      <th style={{ textAlign: 'center' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deletionRequests.map(req => (
+                      <tr key={req._id}>
+                        <td className="user-td font-semibold">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+                              <Trash2 size={16} />
+                            </div>
+                            <div>
+                              <div style={{ color: '#fff', fontSize: '13px' }}>{req.filename}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="font-medium" style={{ color: '#60a5fa' }}>
+                              {req.requestedBy?.username || 'Unknown User'}
+                            </span>
+                            {req.requestedBy?.role && (
+                              <span className={`role-badge ${req.requestedBy.role === 'Root' ? 'root' : req.requestedBy.role === 'Admin' ? 'admin' : 'user'}`}>
+                                {req.requestedBy.role}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="time-td text-sm text-muted">
+                          {formatBDMessageTime(req.createdAt)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => handleApproveVideoDeletion(req._id, req.filename)}
+                              style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Trash2 size={14} />
+                              <span>Delete</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleRejectVideoDeletion(req._id, req.filename)}
+                              style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <X size={14} />
+                              <span>Reject</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

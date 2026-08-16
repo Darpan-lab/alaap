@@ -126,10 +126,12 @@ router.post('/', auth, async (req, res) => {
       return res.status(201).json(fullGroupChat);
     }
 
-    // 2. Direct Message creation or lookup
+    // 2. Direct Message creation or lookup (including self chat / message yourself)
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required for a direct chat.' });
     }
+
+    const isSelfChat = userId.toString() === req.user._id.toString();
 
     // Check if user exists
     const targetUser = await User.findById(userId);
@@ -137,35 +139,50 @@ router.post('/', auth, async (req, res) => {
       return res.status(404).json({ error: 'Target user not found.' });
     }
 
-    // Check block list status
-    const currentUser = await User.findById(req.user._id);
-    if (currentUser && currentUser.blockedUsers && currentUser.blockedUsers.includes(userId)) {
-      return res.status(400).json({ error: 'You have blocked this user. Unblock them to start a chat.' });
-    }
-    if (targetUser && targetUser.blockedUsers && targetUser.blockedUsers.includes(req.user._id.toString())) {
-      return res.status(400).json({ error: 'You cannot message this user.' });
+    // Check block list status (only if not self chat)
+    if (!isSelfChat) {
+      const currentUser = await User.findById(req.user._id);
+      if (currentUser && currentUser.blockedUsers && currentUser.blockedUsers.includes(userId)) {
+        return res.status(400).json({ error: 'You have blocked this user. Unblock them to start a chat.' });
+      }
+      if (targetUser && targetUser.blockedUsers && targetUser.blockedUsers.includes(req.user._id.toString())) {
+        return res.status(400).json({ error: 'You cannot message this user.' });
+      }
     }
 
-    // Find existing direct chat between these two users
-    let directChat = await Chat.findOne({
-      isGroup: false,
-      $and: [
-        { members: { $elemMatch: { $eq: req.user._id } } },
-        { members: { $elemMatch: { $eq: userId } } }
-      ]
-    })
-    .populate('members', 'username profilePic status isAdmin blockedUsers')
-    .populate('latestMessage');
+    // Find existing direct chat or self chat
+    let directChat;
+    if (isSelfChat) {
+      directChat = await Chat.findOne({
+        isGroup: false,
+        $or: [
+          { members: [req.user._id] },
+          { members: [req.user._id, req.user._id] }
+        ]
+      })
+      .populate('members', 'username profilePic status isAdmin blockedUsers')
+      .populate('latestMessage');
+    } else {
+      directChat = await Chat.findOne({
+        isGroup: false,
+        $and: [
+          { members: { $elemMatch: { $eq: req.user._id } } },
+          { members: { $elemMatch: { $eq: userId } } },
+          { members: { $size: 2 } }
+        ]
+      })
+      .populate('members', 'username profilePic status isAdmin blockedUsers')
+      .populate('latestMessage');
+    }
 
     if (directChat) {
       if (directChat.hiddenBy && directChat.hiddenBy.length > 0) {
         directChat.hiddenBy = directChat.hiddenBy.filter(
-          id => id.toString() !== req.user._id.toString() && id.toString() !== userId.toString()
+          id => id.toString() !== req.user._id.toString()
         );
         await directChat.save();
       }
       if (req.io) {
-        const targetUser = directChat.members.find(m => m._id.toString() === userId.toString());
         const targetUserRole = targetUser ? targetUser.role : 'Regular';
         const targetFilteredChat = filterLatestMessage(directChat, userId, targetUserRole);
         req.io.to(`user_${userId}`).emit('new_chat', targetFilteredChat);
@@ -173,11 +190,11 @@ router.post('/', auth, async (req, res) => {
       return res.json(filterLatestMessage(directChat, req.user._id, req.user.role));
     }
 
-    // Create new direct chat
+    // Create new direct chat (or self chat)
     const newChat = new Chat({
-      name: 'Direct Message',
+      name: isSelfChat ? 'Saved Messages' : 'Direct Message',
       isGroup: false,
-      members: [req.user._id, userId]
+      members: isSelfChat ? [req.user._id] : [req.user._id, userId]
     });
 
     await newChat.save();

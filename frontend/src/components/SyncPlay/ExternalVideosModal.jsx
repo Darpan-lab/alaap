@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Folder, Search, X, Upload, Film, Play, Loader2, RefreshCw, CheckCircle2, AlertCircle, FileVideo } from 'lucide-react';
+import { Folder, Search, X, Upload, Film, Play, Loader2, RefreshCw, CheckCircle2, AlertCircle, FileVideo, Trash2, Lock, User } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 
-export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, socket }) {
+export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, socket, chatId, activeChat }) {
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -11,6 +11,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
 
   // Upload States
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isPrivateUpload, setIsPrivateUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState('');
@@ -21,12 +22,33 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
   const [uploadSuccess, setUploadSuccess] = useState('');
   const xhrRef = useRef(null);
 
+  const [canUpload, setCanUpload] = useState(false);
+
+  const fetchStatus = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/external-videos/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCanUpload(Boolean(data.canUploadExternalVideos));
+      }
+    } catch (err) {
+      console.error('Fetch external videos status error:', err);
+    }
+  };
+
   const fetchVideos = async () => {
     if (!token) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/external-videos/list`, {
+      const targetChatId = chatId || activeChat?._id;
+      const url = targetChatId 
+        ? `${API_BASE_URL}/external-videos/list?chatId=${encodeURIComponent(targetChatId)}`
+        : `${API_BASE_URL}/external-videos/list`;
+      const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -46,6 +68,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
 
   useEffect(() => {
     if (isOpen) {
+      fetchStatus();
       fetchVideos();
       setActiveTab('library');
       setUploadSuccess('');
@@ -55,13 +78,42 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
     }
   }, [isOpen, token]);
 
+  const [requestingDelete, setRequestingDelete] = useState({});
+
+  const handleRequestDelete = async (vid) => {
+    if (vid.deletionRequested || requestingDelete[vid.filename]) return;
+
+    setRequestingDelete(prev => ({ ...prev, [vid.filename]: true }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/external-videos/request-delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ filename: vid.filename })
+      });
+      if (res.ok) {
+        fetchVideos();
+      }
+    } catch (err) {
+      console.error('Request video deletion error:', err);
+    } finally {
+      setRequestingDelete(prev => ({ ...prev, [vid.filename]: false }));
+    }
+  };
+
   useEffect(() => {
     if (!socket) return;
     const handleListUpdate = () => {
       fetchVideos();
     };
     socket.on('external_videos_list_updated', handleListUpdate);
-    return () => socket.off('external_videos_list_updated', handleListUpdate);
+    socket.on('video_deletion_request_updated', handleListUpdate);
+    return () => {
+      socket.off('external_videos_list_updated', handleListUpdate);
+      socket.off('video_deletion_request_updated', handleListUpdate);
+    };
   }, [socket]);
 
   if (!isOpen) return null;
@@ -102,6 +154,11 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
 
     const formData = new FormData();
     formData.append('video', selectedFile);
+    formData.append('isPrivate', isPrivateUpload ? 'true' : 'false');
+    const targetChatId = chatId || activeChat?._id;
+    if (targetChatId) {
+      formData.append('chatId', targetChatId);
+    }
 
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
@@ -306,29 +363,31 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
             <span>Video Library ({videos.length})</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('upload')}
-            style={{
-              padding: '14px 4px',
-              fontSize: '13px',
-              fontWeight: activeTab === 'upload' ? '700' : '500',
-              color: activeTab === 'upload' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
-              borderBottom: activeTab === 'upload' ? '2px solid #3b82f6' : '2px solid transparent',
-              background: 'none',
-              borderLeft: 'none',
-              borderRight: 'none',
-              borderTop: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Upload size={16} />
-            <span>Upload New Video</span>
-          </button>
+          {canUpload && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('upload')}
+              style={{
+                padding: '14px 4px',
+                fontSize: '13px',
+                fontWeight: activeTab === 'upload' ? '700' : '500',
+                color: activeTab === 'upload' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                borderBottom: activeTab === 'upload' ? '2px solid #3b82f6' : '2px solid transparent',
+                background: 'none',
+                borderLeft: 'none',
+                borderRight: 'none',
+                borderTop: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Upload size={16} />
+              <span>Upload New Video</span>
+            </button>
+          )}
         </div>
 
         {/* Modal Main Body */}
@@ -467,15 +526,65 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                           <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={vid.filename}>
                             {vid.filename}
                           </p>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '11px', color: 'rgba(255, 255, 255, 0.65)' }}>
+                            <User size={12} style={{ color: '#60a5fa' }} />
+                            <span>Uploaded by <strong style={{ color: '#fff' }}>{vid.uploadedByName || 'Server Admin'}</strong></span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
                             <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.1)' }}>
                               {vid.filename.split('.').pop()}
                             </span>
                             <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: '500' }}>
                               {vid.formattedSize}
                             </span>
+                            {vid.isPrivate && (
+                              <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '600', borderRadius: '4px', background: 'rgba(139, 92, 246, 0.18)', color: '#c084fc', border: '1px solid rgba(139, 92, 246, 0.4)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Lock size={10} /> Private
+                              </span>
+                            )}
+                            {vid.deletionRequested && (
+                              <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '600', borderRadius: '4px', background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}>
+                                Request Pending
+                              </span>
+                            )}
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          disabled={vid.deletionRequested || requestingDelete[vid.filename]}
+                          onClick={() => handleRequestDelete(vid)}
+                          title={vid.deletionRequested ? "Deletion request submitted to Control Center" : "Request video deletion"}
+                          style={{
+                            background: vid.deletionRequested ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                            border: vid.deletionRequested ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+                            color: vid.deletionRequested ? '#f87171' : 'rgba(255, 255, 255, 0.6)',
+                            padding: '6px',
+                            borderRadius: '8px',
+                            cursor: vid.deletionRequested ? 'default' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s',
+                            flexShrink: 0
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!vid.deletionRequested) {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                              e.currentTarget.style.color = '#ef4444';
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!vid.deletionRequested) {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                            }
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
 
                       <button
@@ -576,6 +685,40 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     </div>
                   </div>
                 )}
+
+                <div 
+                  style={{ 
+                    marginTop: '16px', 
+                    display: 'flex', 
+                    alignItems: 'flex-start', 
+                    gap: '12px', 
+                    background: isPrivateUpload ? 'rgba(139, 92, 246, 0.12)' : 'rgba(255, 255, 255, 0.03)', 
+                    padding: '14px 18px', 
+                    borderRadius: '12px', 
+                    border: isPrivateUpload ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)', 
+                    width: '100%', 
+                    maxWidth: '420px', 
+                    textAlign: 'left',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <input 
+                    type="checkbox"
+                    id="private-video-checkbox"
+                    checked={isPrivateUpload}
+                    onChange={(e) => setIsPrivateUpload(e.target.checked)}
+                    disabled={uploading}
+                    style={{ width: '18px', height: '18px', marginTop: '2px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="private-video-checkbox" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '3px', flex: 1 }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: isPrivateUpload ? '#c084fc' : '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Lock size={14} style={{ color: isPrivateUpload ? '#c084fc' : '#60a5fa' }} /> Private Video (This Chat Only)
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', lineHeight: '1.4' }}>
+                      If checked, this video will only be visible and playable by members of this chat/group.
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {uploadError && (

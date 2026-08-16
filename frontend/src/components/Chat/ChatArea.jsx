@@ -613,21 +613,41 @@ export function ChatArea({
   };
 
   const getChatDetails = (chat) => {
-    if (!chat) return { name: '', avatar: '', status: 'offline' };
+    if (!chat) return { name: '', avatar: '', status: 'offline', isSelf: false };
     if (chat.isGroup) {
       return { 
         name: chat.name, 
         avatar: chat.name.substring(0, 2).toUpperCase(), 
         status: 'group',
-        membersCount: chat.members?.length || 0
+        membersCount: chat.members?.length || 0,
+        isSelf: false
       };
     }
-    const otherUser = chat.members.find(m => m._id !== user?.id && m._id !== user?._id);
+    const currentId = user?._id || user?.id;
+    const isSelf = !chat.isGroup && (
+      chat.members?.length === 1 || 
+      (chat.members?.length > 0 && chat.members.every(m => (m._id || m).toString() === currentId?.toString()))
+    );
+
+    if (isSelf) {
+      const myUser = chat.members?.find(m => (m._id || m).toString() === currentId?.toString()) || user;
+      const displayUsername = myUser?.username || user?.username || 'You';
+      return {
+        name: `${displayUsername} (You)`,
+        avatar: myUser?.profilePic || displayUsername.substring(0, 2).toUpperCase(),
+        status: 'online',
+        isAdmin: myUser?.isAdmin,
+        isSelf: true
+      };
+    }
+
+    const otherUser = chat.members?.find(m => (m._id || m).toString() !== currentId?.toString());
     return {
       name: otherUser ? otherUser.username : 'Unknown User',
       avatar: otherUser?.profilePic || (otherUser ? otherUser.username.substring(0, 2).toUpperCase() : '??'),
       status: otherUser?.status || 'offline',
-      isAdmin: otherUser?.isAdmin
+      isAdmin: otherUser?.isAdmin,
+      isSelf: false
     };
   };
 

@@ -44,6 +44,10 @@ const userSchema = new mongoose.Schema({
   externalVideosEnabled: {
     type: Boolean,
     default: false
+  },
+  externalVideosUploadEnabled: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
