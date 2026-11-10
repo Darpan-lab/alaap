@@ -1,4 +1,4 @@
-# Alaap - Real-Time Communication & Watch Party Platform
+# Alaap - Real Time Communication & Watch Party Platform
 
 <p align="center">
   <strong>A modern, full-stack real-time collaboration suite featuring synchronized movie & video playback (SyncPlay), Jellyfin media server streaming, collaborative YouTube study sync, WebRTC voice rooms, and secure instant messaging.</strong>
