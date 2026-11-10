@@ -13,8 +13,8 @@ export default defineConfig({
         name: 'Alaap Messenger',
         short_name: 'Alaap',
         description: 'Alaap real-time communication messenger',
-        theme_color: '#0b0c10',
-        background_color: '#0b0c10',
+        theme_color: '#050b1a',
+        background_color: '#050b1a',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
@@ -45,7 +45,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        cacheId: 'alaap-pwa-v1.1.40',
+        cacheId: 'alaap-pwa-v1.1.46',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [/^\/api/, /^\/socket\.io/, /^\/uploads/],
         cleanupOutdatedCaches: true,

@@ -62,9 +62,7 @@ export function SyncPlayProgressDashboard({
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'rgba(11, 12, 16, 0.94)',
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
+      background: '#060d1e',
       color: '#fff',
       padding: '20px 24px',
       zIndex: 20,
@@ -74,7 +72,7 @@ export function SyncPlayProgressDashboard({
       <div style={{ width: '100%', maxWidth: '540px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Tv size={20} style={{ color: 'var(--primary, #8b5cf6)' }} className="animate-pulse" />
+            <Tv size={20} style={{ color: 'var(--primary-light, #60a5fa)' }} className="animate-pulse" />
             <span style={{ fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.9)' }}>
               SyncPlay Download Pipeline
             </span>
@@ -84,9 +82,9 @@ export function SyncPlayProgressDashboard({
             fontWeight: '600', 
             padding: '3px 12px', 
             borderRadius: '12px',
-            background: status === 'failed' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(139, 92, 246, 0.2)',
-            color: status === 'failed' ? '#ef4444' : 'var(--primary, #a78bfa)',
-            border: `1px solid ${status === 'failed' ? 'rgba(239,68,68,0.4)' : 'rgba(139,92,246,0.4)'}`
+            background: status === 'failed' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(37, 99, 235, 0.22)',
+            color: status === 'failed' ? '#ef4444' : 'var(--primary-light, #60a5fa)',
+            border: `1px solid ${status === 'failed' ? 'rgba(239,68,68,0.4)' : 'rgba(96, 165, 250, 0.4)'}`
           }}>
             {status === 'failed' ? 'FAILED' : (stageName || 'Processing')}
           </span>
@@ -103,8 +101,8 @@ export function SyncPlayProgressDashboard({
             const stgState = getStageState(stg.id);
             const Icon = stg.icon;
             
-            let badgeBg = 'rgba(255,255,255,0.04)';
-            let badgeBorder = 'rgba(255,255,255,0.08)';
+            let badgeBg = 'rgba(18, 38, 82, 0.38)';
+            let badgeBorder = 'rgba(147, 197, 253, 0.16)';
             let iconColor = 'rgba(255,255,255,0.4)';
             
             if (stgState === 'completed') {
@@ -112,9 +110,9 @@ export function SyncPlayProgressDashboard({
               badgeBorder = 'rgba(16, 185, 129, 0.4)';
               iconColor = '#10b981';
             } else if (stgState === 'active') {
-              badgeBg = 'rgba(139, 92, 246, 0.25)';
-              badgeBorder = 'var(--primary, #8b5cf6)';
-              iconColor = '#a78bfa';
+              badgeBg = 'rgba(37, 99, 235, 0.28)';
+              badgeBorder = 'var(--primary-light, #60a5fa)';
+              iconColor = '#60a5fa';
             } else if (stgState === 'failed') {
               badgeBg = 'rgba(239, 68, 68, 0.15)';
               badgeBorder = 'rgba(239, 68, 68, 0.4)';
@@ -143,7 +141,7 @@ export function SyncPlayProgressDashboard({
                       width: '28px',
                       height: '28px',
                       borderRadius: '50%',
-                      border: '2px solid var(--primary, #8b5cf6)',
+                      border: '2px solid var(--primary-light, #60a5fa)',
                       animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
                       opacity: 0.75
                     }} />
@@ -185,7 +183,7 @@ export function SyncPlayProgressDashboard({
               cy="55"
               r={radius}
               fill="transparent"
-              stroke="rgba(255, 255, 255, 0.1)"
+              stroke="rgba(147, 197, 253, 0.16)"
               strokeWidth="8"
             />
             <circle
@@ -202,8 +200,8 @@ export function SyncPlayProgressDashboard({
             />
             <defs>
               <linearGradient id="progress-gradient-clean" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#8b5cf6" />
-                <stop offset="100%" stopColor="#3b82f6" />
+                <stop offset="0%" stopColor="#2563eb" />
+                <stop offset="100%" stopColor="#0ea5e9" />
               </linearGradient>
             </defs>
           </svg>
@@ -237,8 +235,9 @@ export function SyncPlayProgressDashboard({
         }}>
           {/* Card 1: Speed */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: '#0a152e',
+            border: '1px solid #16264c',
+            boxShadow: 'none',
             borderRadius: '10px',
             padding: '10px 14px'
           }}>
@@ -253,8 +252,9 @@ export function SyncPlayProgressDashboard({
 
           {/* Card 2: ETA */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: '#0a152e',
+            border: '1px solid #16264c',
+            boxShadow: 'none',
             borderRadius: '10px',
             padding: '10px 14px'
           }}>
@@ -269,8 +269,9 @@ export function SyncPlayProgressDashboard({
 
           {/* Card 3: Size */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: '#0a152e',
+            border: '1px solid #16264c',
+            boxShadow: 'none',
             borderRadius: '10px',
             padding: '10px 14px'
           }}>
@@ -285,13 +286,14 @@ export function SyncPlayProgressDashboard({
 
           {/* Card 4: Active Stage */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: '#0a152e',
+            border: '1px solid #16264c',
+            boxShadow: 'none',
             borderRadius: '10px',
             padding: '10px 14px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '3px' }}>
-              <RefreshCw size={13} style={{ color: '#a78bfa' }} className={status !== 'failed' ? 'animate-spin' : ''} />
+              <RefreshCw size={13} style={{ color: '#60a5fa' }} className={status !== 'failed' ? 'animate-spin' : ''} />
               <span>CURRENT PHASE</span>
             </div>
             <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -602,7 +602,7 @@ export function SyncPlayPanel({
                     height: '6px',
                     WebkitAppearance: 'none',
                     appearance: 'none',
-                    background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
+                    background: `linear-gradient(to right, var(--primary, #2563eb) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
                     borderRadius: '3px',
                     outline: 'none',
                     cursor: 'pointer'

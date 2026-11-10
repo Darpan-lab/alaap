@@ -73,10 +73,11 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            backgroundColor: isMicrophoneEnabled ? '#3f3f46' : '#ef4444',
+            backgroundColor: isMicrophoneEnabled ? '#2563eb' : '#e11d48',
+            border: isMicrophoneEnabled ? '1px solid #2563eb' : '1px solid #e11d48',
             borderRadius: '24px',
             transition: 'all 0.2s',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+            boxShadow: 'none'
           }}>
             <button
               onClick={toggleMic}
@@ -98,7 +99,7 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
             </button>
             {!isMinimized && (
               <>
-                <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(147, 197, 253, 0.25)' }} />
                 <button
                   onClick={() => setShowDeviceMenu(!showDeviceMenu)}
                   style={{
@@ -129,23 +130,23 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
               left: '50%',
               transform: 'translateX(-50%)',
               marginBottom: '12px',
-              backgroundColor: '#18181b',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '12px',
+              backgroundColor: '#081126',
+              border: '1px solid #16264c',
+              borderRadius: '14px',
               padding: '8px',
               width: 'max-content',
               maxWidth: '280px',
-              boxShadow: '0 12px 24px rgba(0, 0, 0, 0.5)',
+              boxShadow: 'none',
               zIndex: 100,
               display: 'flex',
               flexDirection: 'column',
               gap: '4px'
             }}>
-              <div style={{ padding: '4px 8px', fontSize: '11px', fontWeight: '600', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ padding: '4px 8px', fontSize: '11px', fontWeight: '600', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Microphones
               </div>
               {devices.length === 0 ? (
-                <div style={{ padding: '8px', fontSize: '13px', color: '#71717a' }}>No microphones found</div>
+                <div style={{ padding: '8px', fontSize: '13px', color: '#94a3b8' }}>No microphones found</div>
               ) : (
                 devices.map(device => (
                   <button
@@ -162,17 +163,17 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
                       border: 'none',
                       color: '#ffffff',
                       padding: '8px 12px',
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       cursor: 'pointer',
                       fontSize: '13px',
                       textAlign: 'left',
                       width: '100%'
                     }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#11224a'}
                     onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                   >
                     <div style={{ width: '16px', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                      {activeDeviceId === device.deviceId && <Check size={14} color="#22c55e" />}
+                      {activeDeviceId === device.deviceId && <Check size={14} color="#60a5fa" />}
                     </div>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {device.label || 'Default Microphone'}
@@ -192,14 +193,14 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
                 width: isMinimized ? '36px' : '48px',
                 height: isMinimized ? '36px' : '48px',
                 borderRadius: '50%',
-                backgroundColor: '#ef4444',
-                border: 'none',
+                backgroundColor: '#e11d48',
+                border: '1px solid #e11d48',
                 color: '#ffffff',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
+                boxShadow: 'none',
                 transition: 'all 0.2s'
               }}
               title="Leave Voice Call"
@@ -213,8 +214,8 @@ function CallControls({ onLeave, isMinimized, setIsMinimized, micError, setMicEr
                 width: isMinimized ? '36px' : '48px',
                 height: isMinimized ? '36px' : '48px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                border: 'none',
+                backgroundColor: '#0b1631',
+                border: '1px solid #16264c',
                 color: '#ffffff',
                 display: 'flex',
                 alignItems: 'center',
@@ -256,12 +257,12 @@ function ParticipantCard({ participant, isLocal = false }) {
         width: '72px',
         height: '72px',
         borderRadius: '50%',
-        backgroundColor: '#27272a',
+        background: '#11224a',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: isSpeaking ? '3px solid #22c55e' : '3px solid transparent',
-        boxShadow: isSpeaking ? '0 0 16px rgba(34, 197, 94, 0.6)' : 'none',
+        border: isSpeaking ? '3px solid #22c55e' : '2px solid #1e3366',
+        boxShadow: 'none',
         transition: 'all 0.25s ease'
       }}>
         {avatar ? (
@@ -385,8 +386,8 @@ function RoomContent({ onLeave, chatName, isMini }) {
       return (
         <div style={{
           marginTop: 'auto',
-          backgroundColor: '#0a0b10',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          background: '#081126',
+          borderTop: '1px solid #16264c',
           padding: '14px 0',
           display: 'flex',
           justifyContent: 'center',
@@ -412,8 +413,8 @@ function RoomContent({ onLeave, chatName, isMini }) {
     return (
       <div style={{
         marginTop: 'auto', // Pushes it to the bottom of the sidebar flex container
-        backgroundColor: '#0a0b10', // matching sidebar dark theme
-        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        background: '#081126',
+        borderTop: '1px solid #16264c',
         color: '#ffffff',
         padding: '14px 20px',
         display: 'flex',
@@ -435,12 +436,12 @@ function RoomContent({ onLeave, chatName, isMini }) {
               <span style={{ fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {chatName || 'Voice Call'}
               </span>
-              <span style={{ fontSize: '11px', backgroundColor: 'rgba(255, 255, 255, 0.1)', padding: '2px 6px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '3px', color: '#e4e4e7' }}>
+              <span style={{ fontSize: '11px', backgroundColor: '#0e1c3c', border: '1px solid #1e3366', padding: '2px 6px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '3px', color: '#e2e8f0' }}>
                 <Users size={10} />
                 {participants.length}
               </span>
             </div>
-            <span style={{ fontSize: '11px', color: '#a1a1aa', fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>
               {formatDuration(duration)}
             </span>
           </div>
@@ -459,8 +460,7 @@ function RoomContent({ onLeave, chatName, isMini }) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(9, 9, 11, 0.85)',
-      backdropFilter: 'blur(12px)',
+      backgroundColor: 'rgba(3, 7, 18, 0.8)',
       zIndex: 99999,
       display: 'flex',
       alignItems: 'center',
@@ -468,13 +468,14 @@ function RoomContent({ onLeave, chatName, isMini }) {
       padding: '16px'
     }}>
       <div style={{
-        backgroundColor: '#18181b',
+        backgroundColor: '#081126',
         color: '#ffffff',
         borderRadius: '24px',
         padding: '28px 32px',
         width: '100%',
         maxWidth: '480px',
-        boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+        border: '1px solid #16264c',
+        boxShadow: 'none',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center'
@@ -488,7 +489,7 @@ function RoomContent({ onLeave, chatName, isMini }) {
           <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '700' }}>
             {chatName || 'Voice Call'}
           </h3>
-          <span style={{ fontSize: '13px', color: '#71717a' }}>
+          <span style={{ fontSize: '13px', color: '#94a3b8' }}>
             {formatDuration(duration)}
           </span>
         </div>
@@ -503,7 +504,9 @@ function RoomContent({ onLeave, chatName, isMini }) {
           minHeight: '120px',
           width: '100%',
           padding: '16px',
-          backgroundColor: '#09090b',
+          backgroundColor: '#050b1a',
+          border: '1px solid #16264c',
+          boxShadow: 'none',
           borderRadius: '16px',
           marginBottom: '16px'
         }}>

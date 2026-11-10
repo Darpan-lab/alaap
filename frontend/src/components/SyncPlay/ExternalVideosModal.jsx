@@ -246,8 +246,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        backdropFilter: 'blur(8px)',
+        backgroundColor: 'rgba(3, 7, 18, 0.8)',
         padding: '20px'
       }}
     >
@@ -260,23 +259,23 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
           maxHeight: '750px',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#121316',
-          border: '1px solid rgba(59, 130, 246, 0.35)',
-          borderRadius: '16px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.85), 0 0 40px rgba(59, 130, 246, 0.15)',
+          background: '#081126',
+          border: '1px solid #16264c',
+          borderRadius: '20px',
+          boxShadow: 'none',
           overflow: 'hidden',
-          color: '#f4f4f5'
+          color: '#f8fafc'
         }}
       >
         {/* Modal Header */}
         <div 
           style={{
             padding: '18px 24px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid #16264c',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.12) 0%, rgba(0,0,0,0) 100%)'
+            background: '#09132a'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -285,13 +284,13 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                 width: '42px',
                 height: '42px',
                 borderRadius: '12px',
-                background: 'rgba(59, 130, 246, 0.18)',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
+                background: '#0e1c3c',
+                border: '1px solid #1e3366',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#60a5fa',
-                boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)'
+                boxShadow: 'none'
               }}
             >
               <Folder size={22} />
@@ -300,8 +299,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#fff' }}>
                 Server Folder
               </h3>
-              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Play video files stored in server <code style={{ color: '#60a5fa', background: 'rgba(59,130,246,0.1)', padding: '2px 6px', borderRadius: '4px' }}>/uploads/external/</code> folder
+              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                Play video files stored in server <code style={{ color: '#93c5fd', background: '#0e1c3c', padding: '2px 6px', borderRadius: '4px' }}>/uploads/external/</code> folder
               </p>
             </div>
           </div>
@@ -310,9 +309,9 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
             type="button" 
             onClick={onClose} 
             style={{
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: 'rgba(255, 255, 255, 0.7)',
+              background: '#0b1631',
+              border: '1px solid #16264c',
+              color: 'rgba(255, 255, 255, 0.85)',
               width: '34px',
               height: '34px',
               borderRadius: '50%',
@@ -322,8 +321,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               cursor: 'pointer',
               transition: 'all 0.2s'
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#11224a'; e.currentTarget.style.borderColor = '#1e3366'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#0b1631'; e.currentTarget.style.borderColor = '#16264c'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.85)'; }}
           >
             <X size={18} />
           </button>
@@ -333,10 +332,10 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
         <div 
           style={{
             display: 'flex',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            borderBottom: '1px solid #16264c',
             padding: '0 24px',
             gap: '20px',
-            backgroundColor: 'rgba(0, 0, 0, 0.25)'
+            backgroundColor: '#060d1e'
           }}
         >
           <button
@@ -346,8 +345,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               padding: '14px 4px',
               fontSize: '13px',
               fontWeight: activeTab === 'library' ? '700' : '500',
-              color: activeTab === 'library' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
-              borderBottom: activeTab === 'library' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'library' ? '#60a5fa' : '#94a3b8',
+              borderBottom: activeTab === 'library' ? '2px solid #2563eb' : '2px solid transparent',
               background: 'none',
               borderLeft: 'none',
               borderRight: 'none',
@@ -371,8 +370,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                 padding: '14px 4px',
                 fontSize: '13px',
                 fontWeight: activeTab === 'upload' ? '700' : '500',
-                color: activeTab === 'upload' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
-                borderBottom: activeTab === 'upload' ? '2px solid #3b82f6' : '2px solid transparent',
+                color: activeTab === 'upload' ? '#60a5fa' : '#94a3b8',
+                borderBottom: activeTab === 'upload' ? '2px solid #2563eb' : '2px solid transparent',
                 background: 'none',
                 borderLeft: 'none',
                 borderRight: 'none',
@@ -397,7 +396,7 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               {/* Search Bar & Refresh Button */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255, 255, 255, 0.4)' }} />
+                  <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
                   <input
                     type="text"
                     placeholder="Search videos by title or filename..."
@@ -405,8 +404,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
                       width: '100%',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: '#060d1e',
+                      border: '1px solid #16264c',
                       borderRadius: '10px',
                       padding: '10px 16px 10px 40px',
                       color: '#fff',
@@ -429,9 +428,9 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                   type="button"
                   onClick={fetchVideos}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    color: '#e4e4e7',
+                    background: '#0b1631',
+                    border: '1px solid #16264c',
+                    color: '#ffffff',
                     borderRadius: '10px',
                     padding: '10px 16px',
                     fontSize: '13px',
@@ -440,7 +439,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     alignItems: 'center',
                     gap: '6px',
                     cursor: 'pointer',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    boxShadow: 'none'
                   }}
                 >
                   <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -456,26 +456,26 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               )}
 
               {loading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', gap: '12px', color: 'rgba(255,255,255,0.6)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', gap: '12px', color: '#94a3b8' }}>
                   <Loader2 size={36} className="animate-spin" style={{ color: '#3b82f6' }} />
                   <span style={{ fontSize: '13px' }}>Scanning server video folder...</span>
                 </div>
               ) : filteredVideos.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', border: '2 border-dashed rgba(255,255,255,0.1)', borderRadius: '14px', textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', border: '1px dashed #1e3366', borderRadius: '14px', textAlign: 'center', background: '#060d1e' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#0e1c3c', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa', marginBottom: '14px' }}>
                     <Film size={28} />
                   </div>
                   <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '600', color: '#fff' }}>No video files found</h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: 'rgba(255,255,255,0.5)', maxWidth: '380px', lineHeight: '1.5' }}>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#94a3b8', maxWidth: '380px', lineHeight: '1.5' }}>
                     {searchQuery ? 'No videos match your search query.' : 'Upload a video file or put files directly into /backend/uploads/external/ on the server.'}
                   </p>
                   <button
                     type="button"
                     onClick={() => setActiveTab('upload')}
                     style={{
-                      background: '#3b82f6',
+                      background: '#2563eb',
                       color: '#fff',
-                      border: 'none',
+                      border: '1px solid #2563eb',
                       padding: '10px 18px',
                       borderRadius: '8px',
                       fontSize: '13px',
@@ -483,7 +483,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      boxShadow: 'none'
                     }}
                   >
                     <Upload size={15} />
@@ -497,9 +498,10 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                       key={vid.filename}
                       style={{
                         padding: '16px',
-                        borderRadius: '12px',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '14px',
+                        backgroundColor: '#0a152e',
+                        border: '1px solid #16264c',
+                        boxShadow: 'none',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
@@ -507,38 +509,38 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
-                        e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)';
+                        e.currentTarget.style.borderColor = '#1e3366';
+                        e.currentTarget.style.backgroundColor = '#0e1c3c';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+                        e.currentTarget.style.borderColor = '#16264c';
+                        e.currentTarget.style.backgroundColor = '#0a152e';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ padding: '10px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', flexShrink: 0, marginTop: '2px' }}>
+                        <div style={{ padding: '10px', borderRadius: '10px', background: 'rgba(14, 28, 60, 0.85)', border: '1px solid rgba(255, 255, 255, 0.12)', color: '#60a5fa', flexShrink: 0, marginTop: '2px' }}>
                           <Film size={22} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={vid.title}>
                             {vid.title}
                           </h4>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={vid.filename}>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={vid.filename}>
                             {vid.filename}
                           </p>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '11px', color: 'rgba(255, 255, 255, 0.65)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
                             <User size={12} style={{ color: '#60a5fa' }} />
                             <span>Uploaded by <strong style={{ color: '#fff' }}>{vid.uploadedByName || 'Server Admin'}</strong></span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.12)' }}>
                               {vid.filename.split('.').pop()}
                             </span>
-                            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: '500' }}>
+                            <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '500' }}>
                               {vid.formattedSize}
                             </span>
                             {vid.isPrivate && (
-                              <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '600', borderRadius: '4px', background: 'rgba(139, 92, 246, 0.18)', color: '#c084fc', border: '1px solid rgba(139, 92, 246, 0.4)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <span style={{ padding: '2px 6px', fontSize: '10px', fontWeight: '600', borderRadius: '4px', background: 'rgba(14, 28, 60, 0.85)', color: '#93c5fd', border: '1px solid rgba(255, 255, 255, 0.16)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                                 <Lock size={10} /> Private
                               </span>
                             )}
@@ -557,8 +559,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                           title={vid.deletionRequested ? "Deletion request submitted to Control Center" : "Request video deletion"}
                           style={{
                             background: vid.deletionRequested ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                            border: vid.deletionRequested ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                            color: vid.deletionRequested ? '#f87171' : 'rgba(255, 255, 255, 0.6)',
+                            border: vid.deletionRequested ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+                            color: vid.deletionRequested ? '#f87171' : '#94a3b8',
                             padding: '6px',
                             borderRadius: '8px',
                             cursor: vid.deletionRequested ? 'default' : 'pointer',
@@ -578,8 +580,8 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                           onMouseLeave={(e) => {
                             if (!vid.deletionRequested) {
                               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.color = '#94a3b8';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
                             }
                           }}
                         >
@@ -596,10 +598,10 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                         style={{
                           width: '100%',
                           padding: '10px 14px',
-                          background: '#3b82f6',
+                          background: '#2563eb',
                           color: '#fff',
-                          border: 'none',
-                          borderRadius: '8px',
+                          border: '1px solid #2563eb',
+                          borderRadius: '10px',
                           fontSize: '13px',
                           fontWeight: '600',
                           cursor: 'pointer',
@@ -607,11 +609,11 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '8px',
-                          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                          boxShadow: 'none',
                           transition: 'all 0.2s'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#1d4ed8'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = '#2563eb'}
                       >
                         <Play size={14} fill="currentColor" />
                         <span>Play in Sync Play</span>
@@ -627,23 +629,23 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 0' }}>
               <div 
                 style={{
-                  border: '2px dashed rgba(255, 255, 255, 0.15)',
-                  borderRadius: '14px',
+                  border: '2px dashed #1e3366',
+                  borderRadius: '16px',
                   padding: '36px 20px',
                   textAlign: 'center',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: 'rgba(0, 0, 0, 0.2)'
+                  backgroundColor: '#060d1e'
                 }}
               >
-                <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', display: 'flex', alignItems: 'center', justifyCenter: 'center', marginBottom: '14px' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#0e1c3c', border: '1px solid #1e3366', color: '#60a5fa', display: 'flex', alignItems: 'center', justifyCenter: 'center', marginBottom: '14px' }}>
                   <Upload size={30} style={{ margin: 'auto' }} />
                 </div>
                 <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '600', color: '#fff' }}>Select Video File</h4>
-                <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)', maxWidth: '420px', lineHeight: '1.5' }}>
-                  Videos uploaded here will be saved to server folder <code style={{ color: '#60a5fa' }}>/uploads/external/</code> and made available for everyone on the server.
+                <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: '#94a3b8', maxWidth: '420px', lineHeight: '1.5' }}>
+                  Videos uploaded here will be saved to server folder <code style={{ color: '#93c5fd' }}>/uploads/external/</code> and made available for everyone on the server.
                 </p>
 
                 <input 
@@ -659,16 +661,17 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                   htmlFor="external-video-file-input"
                   style={{
                     padding: '10px 20px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    background: '#2563eb',
+                    border: '1px solid #2563eb',
                     color: '#fff',
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     fontSize: '13px',
                     fontWeight: '600',
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '8px',
+                    boxShadow: 'none',
                     transition: 'all 0.2s'
                   }}
                 >
@@ -677,11 +680,11 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                 </label>
 
                 {selectedFile && (
-                  <div style={{ marginTop: '20px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%', maxWidth: '420px' }}>
+                  <div style={{ marginTop: '20px', padding: '12px 16px', borderRadius: '10px', background: '#0a152e', border: '1px solid #16264c', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', width: '100%', maxWidth: '420px' }}>
                     <Film size={22} style={{ color: '#60a5fa', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedFile.name}</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{formatBytes(selectedFile.size)}</p>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>{formatBytes(selectedFile.size)}</p>
                     </div>
                   </div>
                 )}
@@ -692,10 +695,10 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     display: 'flex', 
                     alignItems: 'flex-start', 
                     gap: '12px', 
-                    background: isPrivateUpload ? 'rgba(139, 92, 246, 0.12)' : 'rgba(255, 255, 255, 0.03)', 
+                    background: isPrivateUpload ? '#0e1c3c' : '#09132a', 
                     padding: '14px 18px', 
                     borderRadius: '12px', 
-                    border: isPrivateUpload ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)', 
+                    border: isPrivateUpload ? '1px solid #2563eb' : '1px solid #16264c', 
                     width: '100%', 
                     maxWidth: '420px', 
                     textAlign: 'left',
@@ -708,13 +711,13 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     checked={isPrivateUpload}
                     onChange={(e) => setIsPrivateUpload(e.target.checked)}
                     disabled={uploading}
-                    style={{ width: '18px', height: '18px', marginTop: '2px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                    style={{ width: '18px', height: '18px', marginTop: '2px', accentColor: '#2563eb', cursor: 'pointer' }}
                   />
                   <label htmlFor="private-video-checkbox" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '3px', flex: 1 }}>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: isPrivateUpload ? '#c084fc' : '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Lock size={14} style={{ color: isPrivateUpload ? '#c084fc' : '#60a5fa' }} /> Private Video (This Chat Only)
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: isPrivateUpload ? '#93c5fd' : '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Lock size={14} style={{ color: '#60a5fa' }} /> Private Video (This Chat Only)
                     </span>
-                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', lineHeight: '1.4' }}>
+                    <span style={{ fontSize: '11px', color: '#94a3b8', lineHeight: '1.4' }}>
                       If checked, this video will only be visible and playable by members of this chat/group.
                     </span>
                   </label>
@@ -736,30 +739,30 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
               )}
 
               {uploading && (
-                <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ padding: '16px', borderRadius: '12px', background: '#09132a', border: '1px solid #1e3366', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
                     <span style={{ fontWeight: '600', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Loader2 size={16} className="animate-spin" style={{ color: '#3b82f6' }} />
                       Uploading Video... {uploadProgress}%
                     </span>
-                    <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontFamily: 'monospace' }}>
+                    <span style={{ color: 'rgba(191, 219, 254, 0.7)', fontFamily: 'monospace' }}>
                       {uploadedSizeStr} / {totalSizeStr}
                     </span>
                   </div>
 
-                  <div style={{ width: '100%', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '100px', height: '10px', overflow: 'hidden' }}>
+                  <div style={{ width: '100%', background: '#050b1a', borderRadius: '100px', height: '10px', overflow: 'hidden' }}>
                     <div 
                       style={{
                         width: `${uploadProgress}%`,
                         height: '100%',
-                        backgroundColor: '#3b82f6',
+                        background: '#2563eb',
                         borderRadius: '100px',
                         transition: 'width 0.2s'
                       }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: 'rgba(191, 219, 254, 0.75)' }}>
                     <span>Speed: <strong style={{ color: '#fff' }}>{uploadSpeed}</strong></span>
                     <span>ETA: <strong style={{ color: '#fff' }}>{uploadEta}</strong></span>
                     <button 
@@ -780,10 +783,10 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     onClick={() => setActiveTab('library')}
                     style={{
                       padding: '10px 18px',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      borderRadius: '8px',
+                      background: '#0b1631',
+                      border: '1px solid #16264c',
+                      color: 'rgba(255, 255, 255, 0.85)',
+                      borderRadius: '10px',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: 'pointer'
@@ -797,16 +800,17 @@ export function ExternalVideosModal({ isOpen, onClose, token, onSelectVideo, soc
                     onClick={handleUploadSubmit}
                     style={{
                       padding: '10px 20px',
-                      background: selectedFile ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                      background: selectedFile ? '#2563eb' : '#0b1631',
                       color: selectedFile ? '#fff' : 'rgba(255, 255, 255, 0.4)',
-                      border: 'none',
-                      borderRadius: '8px',
+                      border: selectedFile ? '1px solid #2563eb' : '1px solid #16264c',
+                      borderRadius: '10px',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: selectedFile ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      boxShadow: 'none'
                     }}
                   >
                     <Upload size={15} />

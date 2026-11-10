@@ -38,7 +38,7 @@ class ErrorBoundary extends React.Component {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#0b0c10',
+          background: '#060d1f',
           color: '#f8fafc',
           fontFamily: 'Outfit, system-ui, -apple-system, sans-serif',
           padding: '20px',
@@ -46,10 +46,11 @@ class ErrorBoundary extends React.Component {
         }}>
           <h2 style={{ fontSize: '1.8rem', marginBottom: '12px', fontWeight: 700 }}>Something went wrong loading Alaap</h2>
           <div style={{ 
-            background: 'rgba(255, 255, 255, 0.05)', 
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            background: 'rgba(15, 32, 68, 0.55)', 
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
             padding: '16px 20px', 
-            borderRadius: '12px', 
+            borderRadius: '14px', 
             marginBottom: '24px', 
             maxWidth: '560px', 
             textAlign: 'left', 
@@ -67,7 +68,7 @@ class ErrorBoundary extends React.Component {
                 wordBreak: 'break-all', 
                 maxHeight: '120px', 
                 overflowY: 'auto',
-                background: 'rgba(0, 0, 0, 0.3)',
+                background: 'rgba(2, 8, 23, 0.45)',
                 padding: '8px 12px',
                 borderRadius: '6px'
               }}>
@@ -79,14 +80,14 @@ class ErrorBoundary extends React.Component {
             onClick={this.handleReset}
             style={{
               padding: '12px 28px',
-              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
               color: '#ffffff',
-              border: 'none',
+              border: '1px solid rgba(147, 197, 253, 0.35)',
               borderRadius: '12px',
               cursor: 'pointer',
               fontWeight: 600,
               fontSize: '1rem',
-              boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)'
+              boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.25), 0 8px 24px rgba(37, 99, 235, 0.4)'
             }}
           >
             Reset Session & Reload App

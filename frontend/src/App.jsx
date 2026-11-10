@@ -395,7 +395,8 @@ const VideoPlayerModal = ({ video, onClose }) => {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              background: 'rgba(99, 102, 241, 0.8)',
+              background: '#2563eb',
+              border: '1px solid #2563eb',
               borderRadius: '50%',
               width: '72px',
               height: '72px',
@@ -403,18 +404,18 @@ const VideoPlayerModal = ({ video, onClose }) => {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              boxShadow: 'none',
               transition: 'all 0.2s ease',
               color: '#fff',
               zIndex: 5
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.95)';
+              e.currentTarget.style.background = '#1d4ed8';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.8)';
+              e.currentTarget.style.background = '#2563eb';
             }}
           >
             <Play size={36} fill="#fff" style={{ display: 'block', marginLeft: '3px' }} />
@@ -461,7 +462,7 @@ const VideoPlayerModal = ({ video, onClose }) => {
                 height: '4px',
                 WebkitAppearance: 'none',
                 appearance: 'none',
-                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
+                background: `linear-gradient(to right, var(--primary, #2563eb) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
                 borderRadius: '2px',
                 outline: 'none',
                 cursor: 'pointer',
@@ -5357,8 +5358,8 @@ function App() {
 
   if (token && loadingUser) {
     return (
-      <div className="app-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0b0c10', color: '#f8fafc' }}>
-        <Loader2 className="animate-spin" size={42} style={{ color: '#6366f1', marginBottom: '16px' }} />
+      <div className="app-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#f8fafc' }}>
+        <Loader2 className="animate-spin" size={42} style={{ color: '#3b82f6', marginBottom: '16px' }} />
         <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Loading Alaap...</h3>
       </div>
     );
@@ -5516,10 +5517,10 @@ function App() {
                           marginBottom: '8px',
                           background: n.isMention 
                             ? 'rgba(234, 179, 8, 0.15)' 
-                            : (n.read ? 'rgba(255,255,255,0.02)' : 'rgba(99, 102, 241, 0.08)'),
+                            : (n.read ? 'rgba(8, 17, 38, 0.45)' : 'rgba(12, 26, 58, 0.78)'),
                           border: n.isMention 
                             ? '1px solid rgba(234, 179, 8, 0.3)' 
-                            : (n.read ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(99, 102, 241, 0.15)'),
+                            : (n.read ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(59, 130, 246, 0.25)'),
                           transition: 'all 0.2s'
                         }}
                         onClick={() => {
@@ -6756,7 +6757,7 @@ function App() {
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-sm"
-                                  style={{ marginTop: '5px', width: 'fit-content', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)' }}
+                                  style={{ marginTop: '5px', width: 'fit-content' }}
                                   onClick={() => {
                                     handleChangeVideo(item.videoId);
                                     setShowSyncPlayHistoryTab(false);
@@ -6822,13 +6823,11 @@ function App() {
                                   alignItems: 'center',
                                   gap: '12px',
                                   padding: '10px 16px',
-                                  background: 'rgba(15, 17, 26, 0.95)',
-                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  background: '#081126',
+                                  border: '1px solid #16264c',
                                   borderRadius: 'var(--radius-md)',
-                                  boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
-                                  cursor: 'pointer',
-                                  backdropFilter: 'blur(10px)',
-                                  WebkitBackdropFilter: 'blur(10px)'
+                                  boxShadow: 'none',
+                                  cursor: 'pointer'
                                 }}
                                 onClick={() => {
                                   if (document.exitFullscreen) {
@@ -7247,13 +7246,12 @@ function App() {
                               maxHeight: 'calc(100% - 30px)',
                               display: 'flex',
                               flexDirection: 'column',
-                              background: 'rgba(11, 12, 16, 0.85)',
-                              backdropFilter: 'blur(12px)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              borderRadius: '12px',
+                              background: '#081126',
+                              border: '1px solid #16264c',
+                              borderRadius: '14px',
                               zIndex: 10,
                               color: '#fff',
-                              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                              boxShadow: 'none',
                               overflow: 'hidden'
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -7270,8 +7268,8 @@ function App() {
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 padding: '12px 16px',
-                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                                background: 'rgba(255, 255, 255, 0.02)',
+                                borderBottom: '1px solid #16264c',
+                                background: '#050b1a',
                                 cursor: isDraggingFloatingChat ? 'grabbing' : 'grab',
                                 userSelect: 'none',
                                 touchAction: 'none'
@@ -7331,7 +7329,8 @@ function App() {
                                       </span>
                                     )}
                                     <div style={{
-                                      background: isOwn ? '#3b82f6' : 'rgba(255, 255, 255, 0.08)',
+                                      background: isOwn ? '#0d1c3e' : '#09132a',
+                                      border: isOwn ? '1px solid #1e3366' : '1px solid #16264c',
                                       padding: '8px 12px',
                                       borderRadius: '8px',
                                       borderTopRightRadius: isOwn ? '2px' : '8px',
@@ -7428,10 +7427,8 @@ function App() {
                                 height: 'auto',
                                 padding: '10px 12px',
                                 gap: '8px',
-                                background: 'rgba(13, 15, 24, 0.85)',
-                                backdropFilter: 'blur(20px)',
-                                WebkitBackdropFilter: 'blur(20px)',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                background: '#050b1a',
+                                borderTop: '1px solid #16264c',
                                 position: 'relative'
                               }}
                             >
@@ -7460,11 +7457,10 @@ function App() {
                                         left: '0',
                                         width: '260px',
                                         maxHeight: '280px',
-                                        background: 'rgba(15, 17, 23, 0.95)',
-                                        backdropFilter: 'blur(16px)',
-                                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                                        borderRadius: '12px',
-                                        boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                                        background: '#081126',
+                                        border: '1px solid #16264c',
+                                        borderRadius: '14px',
+                                        boxShadow: 'none',
                                         zIndex: 100,
                                         display: 'flex',
                                         flexDirection: 'column',
@@ -7657,7 +7653,7 @@ function App() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(11, 12, 16, 0.95)',
+                        background: '#060d1e',
                         color: '#fff',
                         padding: '20px',
                         textAlign: 'center',
@@ -7759,9 +7755,9 @@ function App() {
                         type="button"
                         className="btn btn-secondary btn-sm"
                         style={{
-                          background: externalVideosStatus.canUseExternalVideos ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                          border: externalVideosStatus.canUseExternalVideos ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                          color: externalVideosStatus.canUseExternalVideos ? '#60a5fa' : 'rgba(255, 255, 255, 0.4)',
+                          background: externalVideosStatus.canUseExternalVideos ? '#0b1631' : '#081126',
+                          border: externalVideosStatus.canUseExternalVideos ? '1px solid #1e3366' : '1px solid #16264c',
+                          color: externalVideosStatus.canUseExternalVideos ? '#ffffff' : 'rgba(255, 255, 255, 0.4)',
                           fontWeight: '600',
                           display: 'flex',
                           alignItems: 'center',
@@ -7787,9 +7783,9 @@ function App() {
                         type="button"
                         className="btn btn-secondary btn-sm"
                         style={{
-                          background: jellyfinStatus.canUseJellyfin ? 'rgba(0, 164, 220, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                          border: jellyfinStatus.canUseJellyfin ? '1px solid rgba(0, 164, 220, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                          color: jellyfinStatus.canUseJellyfin ? '#00a4dc' : 'rgba(255, 255, 255, 0.4)',
+                          background: jellyfinStatus.canUseJellyfin ? '#0b1631' : '#081126',
+                          border: jellyfinStatus.canUseJellyfin ? '1px solid #1e3366' : '1px solid #16264c',
+                          color: jellyfinStatus.canUseJellyfin ? '#ffffff' : 'rgba(255, 255, 255, 0.4)',
                           fontWeight: '600',
                           display: 'flex',
                           alignItems: 'center',
@@ -7831,14 +7827,11 @@ function App() {
 
                       <button 
                         type="button"
-                        className="btn btn-primary btn-sm flex items-center justify-center"
+                        className="btn btn-secondary btn-sm flex items-center justify-center"
                         style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
-                          justifyContent: 'center', 
-                          background: 'linear-gradient(135deg, var(--secondary), var(--secondary-hover))', 
-                          borderColor: 'var(--secondary)',
-                          boxShadow: '0 4px 12px rgba(6, 182, 212, 0.2)'
+                          justifyContent: 'center'
                         }}
                         onClick={handleSyncPlayScreenshot}
                         title="Share Frame"
@@ -8165,31 +8158,8 @@ function App() {
       ) : (
             <div className="empty-chat-pane">
               <div className="splash-graphic animate-fade-in">
-                <div className="logo-glow-wrapper">
-                  <div className="app-logo-large">
-                    <Sparkles size={48} className="logo-spark" />
-                    <span>আলাপ</span>
-                  </div>
-                </div>
-                <h1 className="splash-title glow-text-primary">Welcome to Alaap</h1>
-                <p className="splash-subtitle">A modern, secure, and beautiful chat interface. Search a user or create a group to start conversation.</p>
-                <div className="features-grid">
-                  <div className="feature-card glass-panel">
-                    <Tv size={24} className="feature-icon primary" />
-                    <h4>Sync Play</h4>
-                    <p>Watch videos synchronously with group members in real-time.</p>
-                  </div>
-                  <div className="feature-card glass-panel">
-                    <Users size={24} className="feature-icon secondary" />
-                    <h4>Group Spaces</h4>
-                    <p>Seamlessly coordinate with teams or friends in shared channels.</p>
-                  </div>
-                  <div className="feature-card glass-panel">
-                    <Shield size={24} className="feature-icon emerald" />
-                    <h4>Root Controls</h4>
-                    <p>Complete control over system sign-up facilities and account states.</p>
-                  </div>
-                </div>
+                <div className="welcome-circle-bg" />
+                <h1 className="splash-title">Welcome to Alaap</h1>
               </div>
             </div>
           )}
@@ -8241,7 +8211,7 @@ function App() {
                         <div 
                           key={memberId} 
                           className="code-badge-item animate-fade-in" 
-                          style={{ padding: '3px 8px', fontSize: '0.8rem', gap: '4px', cursor: 'pointer', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                          style={{ padding: '3px 8px', fontSize: '0.8rem', gap: '4px', cursor: 'pointer', background: 'rgba(37, 99, 235, 0.2)', border: '1px solid rgba(96, 165, 250, 0.35)' }}
                           onClick={() => setSelectedGroupMembers(prev => prev.filter(id => id !== memberId))}
                         >
                           <span>{uName}</span>
@@ -8388,11 +8358,9 @@ function App() {
                 minWidth: '180px',
                 padding: '6px 0',
                 borderRadius: 'var(--radius-md)',
-                boxShadow: 'var(--shadow-lg)',
-                background: 'rgba(15, 17, 28, 0.95)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid var(--glass-border)'
+                boxShadow: 'none',
+                background: '#081126',
+                border: '1px solid #16264c'
               }}
             >
               {!isBlockedOrBlocker && (
@@ -8609,28 +8577,24 @@ function App() {
                 position: 'fixed',
                 left: `${toolbarPos.x}px`,
                 top: `${toolbarPos.y}px`,
-                background: 'rgba(15, 17, 28, 0.85)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
+                background: '#081126',
+                border: '1px solid #16264c',
                 borderRadius: '16px',
                 padding: '16px',
-                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+                boxShadow: 'none',
                 zIndex: 15005,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '14px',
                 width: '210px',
                 userSelect: 'none',
-                transition: 'box-shadow 0.3s ease, border-color 0.3s ease'
+                transition: 'border-color 0.3s ease'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 20px 50px rgba(0, 255, 210, 0.15), 0 20px 40px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.borderColor = '#1e3366';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.borderColor = '#16264c';
               }}
             >
               {/* Drag handle */}
@@ -8822,10 +8786,10 @@ function App() {
                 style={{
                   width: '100%',
                   padding: '10px',
-                  background: 'var(--accent-primary, #00ffcc)',
-                  color: '#090a10',
+                  background: '#2563eb',
+                  color: '#ffffff',
                   fontWeight: '700',
-                  border: 'none',
+                  border: '1px solid #2563eb',
                   borderRadius: '10px',
                   cursor: isUpdating ? 'not-allowed' : 'pointer',
                   display: 'flex',
@@ -8833,7 +8797,7 @@ function App() {
                   justifyContent: 'center',
                   gap: '8px',
                   fontSize: '0.875rem',
-                  boxShadow: '0 0 15px rgba(0, 255, 210, 0.2)',
+                  boxShadow: 'none',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -8868,9 +8832,7 @@ function App() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(10, 11, 18, 0.65)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          background: 'rgba(3, 7, 18, 0.8)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -8880,17 +8842,17 @@ function App() {
           <div className="custom-dialog-card glass-panel" style={{
             width: '100%',
             maxWidth: '400px',
-            borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
-            background: 'var(--bg-secondary)',
+            borderRadius: '18px',
+            border: '1px solid #16264c',
+            boxShadow: 'none',
+            background: '#081126',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
           }}>
             <div className="custom-dialog-header" style={{
               padding: '20px 24px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              borderBottom: '1px solid #16264c',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
@@ -8945,8 +8907,8 @@ function App() {
             
             <div className="custom-dialog-footer" style={{
               padding: '16px 24px',
-              background: 'rgba(10, 11, 18, 0.2)',
-              borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+              background: '#050b1a',
+              borderTop: '1px solid #16264c',
               display: 'flex',
               justifyContent: 'flex-end',
               gap: '12px'
@@ -8998,15 +8960,13 @@ function App() {
               alignItems: 'center',
               gap: '12px',
               padding: '12px 16px',
-              background: toast.isMention ? 'rgba(35, 25, 0, 0.95)' : 'rgba(15, 17, 26, 0.9)',
-              border: toast.isMention ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid var(--glass-border)',
+              background: toast.isMention ? '#2d2006' : '#081126',
+              border: toast.isMention ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid #16264c',
               borderRadius: 'var(--radius-md)',
-              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)',
+              boxShadow: 'none',
               cursor: 'pointer',
               minWidth: '280px',
-              maxWidth: '360px',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)'
+              maxWidth: '360px'
             }}
             onClick={() => {
               toast.onClick?.();
@@ -10213,7 +10173,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
                 >
                   {adminJellyfinTesting ? 'Testing...' : 'Test Connection'}
                 </button>
-                <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#00a4dc', borderColor: '#00a4dc', color: '#fff', fontWeight: '600', padding: '8px 16px' }}>
+                <button type="submit" className="btn btn-primary btn-sm" style={{ fontWeight: '600', padding: '8px 16px' }}>
                   Save Jellyfin Configuration
                 </button>
               </div>

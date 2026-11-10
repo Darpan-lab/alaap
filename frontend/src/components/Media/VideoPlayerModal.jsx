@@ -317,7 +317,10 @@ export const VideoPlayerModal = ({ video, onClose }) => {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              background: 'rgba(99, 102, 241, 0.8)',
+              background: 'rgba(37, 99, 235, 0.82)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(147, 197, 253, 0.35)',
               borderRadius: '50%',
               width: '72px',
               height: '72px',
@@ -325,18 +328,18 @@ export const VideoPlayerModal = ({ video, onClose }) => {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 10px 30px rgba(2, 8, 23, 0.6), 0 0 24px rgba(37, 99, 235, 0.45)',
               transition: 'all 0.2s ease',
               color: '#fff',
               zIndex: 5
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.95)';
+              e.currentTarget.style.background = 'rgba(37, 99, 235, 0.96)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.8)';
+              e.currentTarget.style.background = 'rgba(37, 99, 235, 0.82)';
             }}
           >
             <Play size={36} fill="#fff" style={{ display: 'block', marginLeft: '3px' }} />
@@ -387,7 +390,7 @@ export const VideoPlayerModal = ({ video, onClose }) => {
                 height: '4px',
                 WebkitAppearance: 'none',
                 appearance: 'none',
-                background: `linear-gradient(to right, var(--primary, #8b5cf6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
+                background: `linear-gradient(to right, var(--primary, #2563eb) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${progressPercent}%, rgba(255, 255, 255, 0.6) ${Math.max(progressPercent, bufferedPercent)}%, rgba(255, 255, 255, 0.2) ${Math.max(progressPercent, bufferedPercent)}%)`,
                 borderRadius: '2px',
                 outline: 'none',
                 cursor: 'pointer',

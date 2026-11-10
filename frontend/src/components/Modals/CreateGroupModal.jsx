@@ -114,7 +114,7 @@ export function CreateGroupModal({ isOpen, onClose }) {
                     <div 
                       key={memberId} 
                       className="code-badge-item animate-fade-in" 
-                      style={{ padding: '3px 8px', fontSize: '0.8rem', gap: '4px', cursor: 'pointer', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                      style={{ padding: '3px 8px', fontSize: '0.8rem', gap: '4px', cursor: 'pointer', background: 'rgba(37, 99, 235, 0.2)', border: '1px solid rgba(96, 165, 250, 0.35)' }}
                       onClick={() => setSelectedGroupMembers(prev => prev.filter(id => id !== memberId))}
                     >
                       <span>{uName}</span>

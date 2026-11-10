@@ -187,9 +187,7 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
         right: 0,
         bottom: 0,
         zIndex: 15000,
-        background: 'rgba(5, 7, 13, 0.85)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
+        background: 'rgba(3, 7, 18, 0.8)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -206,10 +204,10 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
           maxHeight: '750px',
           display: 'flex',
           flexDirection: 'column',
-          background: 'rgba(15, 18, 28, 0.95)',
-          border: '1px solid rgba(0, 164, 220, 0.3)',
-          borderRadius: '16px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 164, 220, 0.15)',
+          background: '#081126',
+          border: '1px solid #16264c',
+          borderRadius: '20px',
+          boxShadow: 'none',
           overflow: 'hidden'
         }}
       >
@@ -217,11 +215,11 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
         <div 
           style={{
             padding: '16px 24px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid #16264c',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(180deg, rgba(0, 164, 220, 0.15) 0%, rgba(0,0,0,0) 100%)'
+            background: '#09132a'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -230,12 +228,12 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
                 width: '40px',
                 height: '40px',
                 borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(0, 164, 220, 0.25), rgba(170, 92, 195, 0.25))',
-                border: '1px solid rgba(0, 164, 220, 0.4)',
+                background: '#0e1c3c',
+                border: '1px solid #1e3366',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 14px rgba(0, 164, 220, 0.3)'
+                boxShadow: 'none'
               }}
             >
               <JellyfinLogo size={24} />
@@ -258,9 +256,9 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
             type="button" 
             onClick={onClose}
             style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: 'rgba(255, 255, 255, 0.7)',
+              background: '#0b1631',
+              border: '1px solid #16264c',
+              color: 'rgba(255, 255, 255, 0.85)',
               width: '34px',
               height: '34px',
               borderRadius: '50%',
@@ -270,8 +268,8 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
               cursor: 'pointer',
               transition: 'all 0.2s'
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#11224a'; e.currentTarget.style.borderColor = '#1e3366'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#0b1631'; e.currentTarget.style.borderColor = '#16264c'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.85)'; }}
           >
             <X size={18} />
           </button>
@@ -457,23 +455,24 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
-                      borderRadius: '12px',
+                      borderRadius: '14px',
                       overflow: 'hidden',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      background: '#0a152e',
+                      border: '1px solid #16264c',
+                      boxShadow: 'none',
                       transition: 'all 0.25s ease',
                       cursor: 'pointer',
                       position: 'relative'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-4px)';
-                      e.currentTarget.style.borderColor = isSeason ? 'rgba(170, 92, 195, 0.7)' : 'rgba(0, 164, 220, 0.6)';
-                      e.currentTarget.style.boxShadow = isSeason ? '0 10px 24px rgba(170, 92, 195, 0.25)' : '0 10px 24px rgba(0, 164, 220, 0.25)';
+                      e.currentTarget.style.borderColor = '#1e3366';
+                      e.currentTarget.style.background = '#0e1c3c';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = '#16264c';
+                      e.currentTarget.style.background = '#0a152e';
                     }}
                     onClick={() => {
                       if (isFolder) {
@@ -490,7 +489,7 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
                     }}
                   >
                     {/* Poster Aspect Ratio Container */}
-                    <div style={{ position: 'relative', width: '100%', aspectRatio: '2/3', background: 'rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: '2/3', background: 'rgba(4, 10, 26, 0.55)', overflow: 'hidden' }}>
                       {item.imageUrl ? (
                         <img 
                           src={item.imageUrl.startsWith('http') ? item.imageUrl : `${API_BASE_URL.replace(/\/api\/?$/, '')}${item.imageUrl}`}
@@ -499,7 +498,7 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
                           onError={(e) => { e.currentTarget.style.display = 'none'; }}
                         />
                       ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: isSeason ? 'linear-gradient(135deg, rgba(170, 92, 195, 0.25), rgba(15, 23, 42, 0.9))' : 'linear-gradient(135deg, rgba(0, 164, 220, 0.2), rgba(15, 23, 42, 0.8))', color: 'rgba(255,255,255,0.4)', gap: '8px' }}>
+                        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: isSeason ? 'linear-gradient(135deg, rgba(170, 92, 195, 0.25), rgba(15, 23, 42, 0.9))' : 'linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(15, 23, 42, 0.8))', color: 'rgba(255,255,255,0.4)', gap: '8px' }}>
                           {isSeason ? <Tv size={36} style={{ color: '#aa5cc3' }} /> : isSeries ? <Clapperboard size={32} /> : <Film size={32} />}
                           <span style={{ fontSize: '12px', fontWeight: '600', textAlign: 'center', padding: '0 8px', color: '#fff' }}>{item.name}</span>
                         </div>
@@ -510,7 +509,7 @@ export function JellyfinModal({ token, isOpen, onClose, onLoadVideo }) {
                         position: 'absolute',
                         top: '8px',
                         right: '8px',
-                        background: isSeason ? 'linear-gradient(135deg, #aa5cc3, #7b52be)' : isSeries ? 'rgba(6, 182, 212, 0.9)' : 'rgba(99, 102, 241, 0.9)',
+                        background: isSeason ? 'linear-gradient(135deg, #aa5cc3, #7b52be)' : isSeries ? 'rgba(14, 165, 233, 0.9)' : 'rgba(37, 99, 235, 0.9)',
                         color: '#fff',
                         fontSize: '10px',
                         fontWeight: '700',
