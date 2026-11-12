@@ -1006,7 +1006,10 @@ io.on('connection', async (socket) => {
             if (config.isConfigured) {
               const { token, userId } = await getJellyfinAuth(config);
               const res = await fetch(`${config.jellyfinUrl}/Users/${userId}/Items/${itemId}`, {
-                headers: { 'Authorization': `MediaBrowser Token="${token}"` }
+                headers: {
+                  'Authorization': `MediaBrowser Token="${token}"`,
+                  'X-Emby-Token': token
+                }
               });
               if (res.ok) {
                 const itemData = await res.json();

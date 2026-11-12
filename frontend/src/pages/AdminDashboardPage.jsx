@@ -14,6 +14,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
   const [jellyfinUrlInput, setJellyfinUrlInput] = useState('');
   const [jellyfinUsernameInput, setJellyfinUsernameInput] = useState('');
   const [jellyfinPasswordInput, setJellyfinPasswordInput] = useState('');
+  const [jellyfinApiKeyInput, setJellyfinApiKeyInput] = useState('');
   const [jellyfinEnabledInput, setJellyfinEnabledInput] = useState(false);
   const [jellyfinSaveSuccess, setJellyfinSaveSuccess] = useState('');
   const [jellyfinSaveError, setJellyfinSaveError] = useState('');
@@ -479,6 +480,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
         setJellyfinUrlInput(data.settings?.jellyfinUrl || '');
         setJellyfinUsernameInput(data.settings?.jellyfinUsername || '');
         setJellyfinPasswordInput(data.settings?.jellyfinPassword ? '********' : '');
+        setJellyfinApiKeyInput(data.settings?.jellyfinApiKey ? '********' : '');
         setJellyfinEnabledInput(Boolean(data.settings?.jellyfinEnabled));
         setUsers(data.users || []);
       }
@@ -504,6 +506,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
           jellyfinUrl: jellyfinUrlInput,
           jellyfinUsername: jellyfinUsernameInput,
           jellyfinPassword: jellyfinPasswordInput,
+          jellyfinApiKey: jellyfinApiKeyInput,
           jellyfinEnabled: jellyfinEnabledInput
         })
       });
@@ -515,6 +518,7 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
           jellyfinUrl: jellyfinUrlInput,
           jellyfinUsername: jellyfinUsernameInput,
           jellyfinPassword: jellyfinPasswordInput,
+          jellyfinApiKey: jellyfinApiKeyInput,
           jellyfinEnabled: jellyfinEnabledInput
         }));
         setTimeout(() => setJellyfinSaveSuccess(''), 4000);
@@ -828,9 +832,26 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
 
           {/* Jellyfin Integration Config */}
           <div className="admin-card glass-panel config-card mt-6" style={{ marginTop: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Tv size={20} style={{ color: '#00a4dc' }} />
-              <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Tv size={20} style={{ color: '#00a4dc' }} />
+                <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+              </div>
+              {user?.role === 'Root' && (
+                <button
+                  type="button"
+                  onClick={handleToggleGlobalJellyfin}
+                  className={`toggle-btn ${jellyfinEnabledInput ? 'active' : ''}`}
+                  title={jellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
+                  style={{ padding: 0 }}
+                >
+                  {jellyfinEnabledInput ? (
+                    <ToggleRight size={32} className="toggle-on" />
+                  ) : (
+                    <ToggleLeft size={32} className="toggle-off" />
+                  )}
+                </button>
+              )}
             </div>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
               Configure your self-hosted Jellyfin media server and enable or disable the feature globally across Alaap.
@@ -838,27 +859,6 @@ export function AdminDashboardPage({ token, user, onClose, showConfirm, showAler
 
             {jellyfinSaveSuccess && <div className="admin-alert success">{jellyfinSaveSuccess}</div>}
             {jellyfinSaveError && <div className="admin-alert error">{jellyfinSaveError}</div>}
-
-            {user?.role === 'Root' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(0, 164, 220, 0.08)', borderRadius: '10px', border: '1px solid rgba(0, 164, 220, 0.2)', marginBottom: '16px' }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#00a4dc' }}>Jellyfin Feature (Global Switch)</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Master switch. Disabled by default for all users.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleGlobalJellyfin}
-                  className={`toggle-btn ${jellyfinEnabledInput ? 'active' : ''}`}
-                  title={jellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
-                >
-                  {jellyfinEnabledInput ? (
-                    <ToggleRight size={38} className="toggle-on" />
-                  ) : (
-                    <ToggleLeft size={38} className="toggle-off" />
-                  )}
-                </button>
-              </div>
-            )}
 
             <form onSubmit={handleSaveJellyfinConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

@@ -5680,44 +5680,6 @@ function App() {
                             <span>{details.name}</span>
                             {isChatMuted(chat) && <BellOff size={12} style={{ opacity: 0.5, color: 'var(--text-secondary)' }} />}
                           </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
-                            {chat.latestMessage && (
-                              <span className="chat-time">
-                                {formatBDTimeOnly(chat.latestMessage.createdAt)}
-                              </span>
-                            )}
-                            <button 
-                              type="button"
-                              className="chat-card-menu-btn"
-                              title="Chat Options"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
-                              }}
-                            >
-                              <MoreVertical size={14} />
-                            </button>
-
-                            {cardMenuOpenId === chat._id && (
-                              <div 
-                                className="chat-card-dropdown"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <button 
-                                  type="button" 
-                                  className="dropdown-item danger"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCardMenuOpenId(null);
-                                    handleDeleteChat(chat._id);
-                                  }}
-                                >
-                                  <Trash2 size={14} />
-                                  <span>Delete Chat Box</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
                         </div>
                         <div className="chat-item-preview">
                           {typerNames.length > 0 ? (
@@ -5752,6 +5714,44 @@ function App() {
                           boxShadow: 'none'
                         } : {}}>{chat.unreadCount}</div>
                       )}
+                      <div className="chat-item-right-meta">
+                        {chat.latestMessage && (
+                          <span className="chat-time">
+                            {formatBDTimeOnly(chat.latestMessage.createdAt)}
+                          </span>
+                        )}
+                        <button 
+                          type="button"
+                          className="chat-card-menu-btn"
+                          title="Chat Options"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
+                          }}
+                        >
+                          <MoreVertical size={20} />
+                        </button>
+
+                        {cardMenuOpenId === chat._id && (
+                          <div 
+                            className="chat-card-dropdown"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button 
+                              type="button" 
+                              className="dropdown-item danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCardMenuOpenId(null);
+                                handleDeleteChat(chat._id);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              <span>Delete Chat Box</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })
@@ -5765,10 +5765,24 @@ function App() {
           isMini={sidebarState === 'mini'}
         />
       </div>
-          
 
+          {/* Sidebar Border Toggle Button */}
+          <div className="sidebar-border-toggle-container desktop-only-btn">
+            <button 
+              type="button" 
+              className={`sidebar-border-toggle-btn ${sidebarState !== 'full' ? 'active' : ''} ${sidebarState === 'hidden' ? 'is-hidden-state' : ''}`}
+              title={sidebarState === 'full' ? 'Minimize Sidebar' : sidebarState === 'mini' ? 'Hide Sidebar' : 'Show Sidebar'}
+              onClick={() => {
+                if (sidebarState === 'full') setSidebarState('mini');
+                else if (sidebarState === 'mini') setSidebarState('hidden');
+                else setSidebarState('full');
+              }}
+            >
+              {sidebarState === 'full' ? <PanelLeftClose size={16} /> : sidebarState === 'mini' ? <Menu size={16} /> : <PanelLeftOpen size={16} />}
+            </button>
+          </div>
 
-          {/* Active Chat Area or Admin Dashboard or Settings Center */}
+          {/* Active Chat Area or Admin Dashboard or Settings */}
           {isAdminOpen ? (
             <AdminDashboard 
               token={token} 
@@ -5850,18 +5864,6 @@ function App() {
                 <div className="chat-header-info">
                   <button className="icon-btn mobile-back-btn" onClick={() => setActiveChat(null)} title="Back to Chats">
                     <ArrowLeft size={20} />
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`icon-btn desktop-only-btn ${sidebarState !== 'full' ? 'active' : ''}`}
-                    title={sidebarState === 'full' ? 'Minimize Sidebar' : sidebarState === 'mini' ? 'Hide Sidebar' : 'Show Sidebar'}
-                    onClick={() => {
-                      if (sidebarState === 'full') setSidebarState('mini');
-                      else if (sidebarState === 'mini') setSidebarState('hidden');
-                      else setSidebarState('full');
-                    }}
-                  >
-                    {sidebarState === 'full' ? <PanelLeftClose size={20} /> : sidebarState === 'mini' ? <Menu size={20} /> : <PanelLeftOpen size={20} />}
                   </button>
                   <div className="avatar">
                     {activeChat.isGroup ? (
@@ -8160,6 +8162,7 @@ function App() {
               <div className="splash-graphic animate-fade-in">
                 <div className="welcome-circle-bg" />
                 <h1 className="splash-title">Welcome to Alaap</h1>
+                <p className="splash-subtitle">Experience New Era of Messaging</p>
               </div>
             </div>
           )}
@@ -9230,12 +9233,13 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
     showAlert(message);
   };
   const [stats, setStats] = useState({ totalUsers: 0, totalChats: 0, totalMessages: 0 });
-  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [], jellyfinUrl: '', jellyfinUsername: '', jellyfinPassword: '', jellyfinEnabled: false });
+  const [settings, setSettings] = useState({ signupEnabled: true, inviteOnlyEnabled: false, inviteCodes: [], jellyfinUrl: '', jellyfinUsername: '', jellyfinPassword: '', jellyfinApiKey: '', jellyfinEnabled: false });
   const [users, setUsers] = useState([]);
 
   const [adminJellyfinUrlInput, setAdminJellyfinUrlInput] = useState('');
   const [adminJellyfinUsernameInput, setAdminJellyfinUsernameInput] = useState('');
   const [adminJellyfinPasswordInput, setAdminJellyfinPasswordInput] = useState('');
+  const [adminJellyfinApiKeyInput, setAdminJellyfinApiKeyInput] = useState('');
   const [adminJellyfinEnabledInput, setAdminJellyfinEnabledInput] = useState(false);
   const [adminJellyfinSaveSuccess, setAdminJellyfinSaveSuccess] = useState('');
   const [adminJellyfinSaveError, setAdminJellyfinSaveError] = useState('');
@@ -9708,6 +9712,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
         setAdminJellyfinUrlInput(data.settings?.jellyfinUrl || '');
         setAdminJellyfinUsernameInput(data.settings?.jellyfinUsername || '');
         setAdminJellyfinPasswordInput(data.settings?.jellyfinPassword ? '********' : '');
+        setAdminJellyfinApiKeyInput(data.settings?.jellyfinApiKey ? '********' : '');
         setAdminJellyfinEnabledInput(Boolean(data.settings?.jellyfinEnabled));
       }
     } catch (err) {
@@ -9732,6 +9737,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
           jellyfinUrl: adminJellyfinUrlInput,
           jellyfinUsername: adminJellyfinUsernameInput,
           jellyfinPassword: adminJellyfinPasswordInput,
+          jellyfinApiKey: adminJellyfinApiKeyInput,
           jellyfinEnabled: adminJellyfinEnabledInput
         })
       });
@@ -9743,6 +9749,7 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
           jellyfinUrl: adminJellyfinUrlInput,
           jellyfinUsername: adminJellyfinUsernameInput,
           jellyfinPassword: adminJellyfinPasswordInput,
+          jellyfinApiKey: adminJellyfinApiKeyInput,
           jellyfinEnabled: adminJellyfinEnabledInput
         }));
         if (typeof onUpdateJellyfinStatus === 'function') {
@@ -9773,7 +9780,8 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
         body: JSON.stringify({
           jellyfinUrl: adminJellyfinUrlInput,
           jellyfinUsername: adminJellyfinUsernameInput,
-          jellyfinPassword: adminJellyfinPasswordInput
+          jellyfinPassword: adminJellyfinPasswordInput,
+          jellyfinApiKey: adminJellyfinApiKeyInput
         })
       });
       const data = await response.json();
@@ -10088,9 +10096,26 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
 
           {/* Jellyfin Integration Config */}
           <div className="admin-card glass-panel config-card mt-6" style={{ marginTop: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <JellyfinLogo size={22} />
-              <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <JellyfinLogo size={22} />
+                <h3 style={{ margin: 0 }}>Jellyfin Server Integration</h3>
+              </div>
+              {user?.role === 'Root' && (
+                <button
+                  type="button"
+                  onClick={handleToggleGlobalJellyfin}
+                  className={`toggle-btn ${adminJellyfinEnabledInput ? 'active' : ''}`}
+                  title={adminJellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
+                  style={{ padding: 0 }}
+                >
+                  {adminJellyfinEnabledInput ? (
+                    <ToggleRight size={32} className="toggle-on" />
+                  ) : (
+                    <ToggleLeft size={32} className="toggle-off" />
+                  )}
+                </button>
+              )}
             </div>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
               Configure your self-hosted Jellyfin media server and enable or disable the feature globally across Alaap.
@@ -10098,27 +10123,6 @@ function AdminDashboard({ token, user, onClose, showConfirm, showAlert, onOpenCh
 
             {adminJellyfinSaveSuccess && <div className="admin-alert success">{adminJellyfinSaveSuccess}</div>}
             {adminJellyfinSaveError && <div className="admin-alert error">{adminJellyfinSaveError}</div>}
-
-            {user?.role === 'Root' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(0, 164, 220, 0.08)', borderRadius: '10px', border: '1px solid rgba(0, 164, 220, 0.2)', marginBottom: '16px' }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#00a4dc' }}>Jellyfin Feature (Global Switch)</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Master switch. Disabled by default for all users.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleGlobalJellyfin}
-                  className={`toggle-btn ${adminJellyfinEnabledInput ? 'active' : ''}`}
-                  title={adminJellyfinEnabledInput ? 'Disable Jellyfin Globally' : 'Enable Jellyfin Globally'}
-                >
-                  {adminJellyfinEnabledInput ? (
-                    <ToggleRight size={38} className="toggle-on" />
-                  ) : (
-                    <ToggleLeft size={38} className="toggle-off" />
-                  )}
-                </button>
-              </div>
-            )}
 
             <form onSubmit={handleSaveAdminJellyfinConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -10967,20 +10971,8 @@ function SettingsCenter({
     <div className="admin-pane settings-center-pane animate-fade-in">
       <div className="admin-header border-b">
         <div className="admin-title-area">
-          <button 
-            type="button" 
-            className={`icon-btn desktop-only-btn ${sidebarState !== 'full' ? 'active' : ''}`}
-            onClick={() => {
-              if (sidebarState === 'full') setSidebarState('mini');
-              else if (sidebarState === 'mini') setSidebarState('hidden');
-              else setSidebarState('full');
-            }}
-            title={sidebarState === 'full' ? 'Minimize Sidebar' : sidebarState === 'mini' ? 'Hide Sidebar' : 'Show Sidebar'}
-          >
-            {sidebarState === 'full' ? <PanelLeftClose size={22} /> : sidebarState === 'mini' ? <Menu size={22} /> : <PanelLeftOpen size={22} />}
-          </button>
           <div>
-            <h2>Settings Center</h2>
+            <h2>Settings</h2>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Manage your personal profile, notification sounds, and account preferences.</p>
           </div>
         </div>

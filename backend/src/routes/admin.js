@@ -51,6 +51,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
     const jellyfinUrl = await getOrCreateSetting('jellyfinUrl', '');
     const jellyfinUsername = await getOrCreateSetting('jellyfinUsername', '');
     const jellyfinPassword = await getOrCreateSetting('jellyfinPassword', '');
+    const jellyfinApiKey = await getOrCreateSetting('jellyfinApiKey', '');
     const jellyfinEnabledSetting = await getOrCreateSetting('jellyfinEnabled', 'true');
     const jellyfinEnabled = String(jellyfinEnabledSetting) === 'true' || jellyfinEnabledSetting === true;
 
@@ -92,6 +93,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
         jellyfinUrl,
         jellyfinUsername,
         jellyfinPassword: jellyfinPassword ? '********' : '',
+        jellyfinApiKey: jellyfinApiKey ? '********' : '',
         jellyfinEnabled
       },
       users: mappedUsers
@@ -105,7 +107,7 @@ router.get('/settings', auth, adminAuth, async (req, res) => {
 // Update registration settings & Jellyfin settings
 router.post('/settings', auth, adminAuth, async (req, res) => {
   try {
-    const { signupEnabled, inviteOnlyEnabled, jellyfinUrl, jellyfinUsername, jellyfinPassword, jellyfinEnabled } = req.body;
+    const { signupEnabled, inviteOnlyEnabled, jellyfinUrl, jellyfinUsername, jellyfinPassword, jellyfinApiKey, jellyfinEnabled } = req.body;
 
     if (signupEnabled !== undefined) {
       await updateSetting('signupEnabled', signupEnabled);
@@ -121,6 +123,9 @@ router.post('/settings', auth, adminAuth, async (req, res) => {
     }
     if (jellyfinPassword !== undefined && jellyfinPassword !== '********') {
       await updateSetting('jellyfinPassword', jellyfinPassword);
+    }
+    if (jellyfinApiKey !== undefined && jellyfinApiKey !== '********') {
+      await updateSetting('jellyfinApiKey', jellyfinApiKey);
     }
     if (jellyfinEnabled !== undefined) {
       await updateSetting('jellyfinEnabled', jellyfinEnabled);

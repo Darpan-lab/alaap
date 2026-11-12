@@ -389,46 +389,6 @@ export function Sidebar({
                   <div className="chat-item-info">
                     <div className="chat-item-header">
                       <span className="chat-name">{details.name}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
-                        {chat.latestMessage && (
-                          <span className="chat-time">
-                            {formatBDTimeOnly(chat.latestMessage.createdAt)}
-                          </span>
-                        )}
-                        <button 
-                          type="button"
-                          className="chat-card-menu-btn"
-                          title="Chat Options"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
-                          }}
-                        >
-                          <MoreVertical size={14} />
-                        </button>
-
-                        {cardMenuOpenId === chat._id && (
-                          <div 
-                            className="chat-card-dropdown"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button 
-                              type="button" 
-                              className="dropdown-item danger"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCardMenuOpenId(null);
-                                if (onDeleteChat) {
-                                  onDeleteChat(chat._id);
-                                }
-                              }}
-                            >
-                              <Trash2 size={14} />
-                              <span>Delete Chat Box</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                     <div className="chat-item-preview">
                       {typerNames.length > 0 ? (
@@ -452,6 +412,46 @@ export function Sidebar({
                   {chat.unreadCount > 0 && (
                     <div className="unread-badge">{chat.unreadCount}</div>
                   )}
+                  <div className="chat-item-right-meta">
+                    {chat.latestMessage && (
+                      <span className="chat-time">
+                        {formatBDTimeOnly(chat.latestMessage.createdAt)}
+                      </span>
+                    )}
+                    <button 
+                      type="button"
+                      className="chat-card-menu-btn"
+                      title="Chat Options"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardMenuOpenId(cardMenuOpenId === chat._id ? null : chat._id);
+                      }}
+                    >
+                      <MoreVertical size={20} />
+                    </button>
+
+                    {cardMenuOpenId === chat._id && (
+                      <div 
+                        className="chat-card-dropdown"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button 
+                          type="button" 
+                          className="dropdown-item danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardMenuOpenId(null);
+                            if (onDeleteChat) {
+                              onDeleteChat(chat._id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          <span>Delete Chat Box</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })

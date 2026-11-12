@@ -189,9 +189,8 @@ docker run -d \
    LIVEKIT_API_KEY=your_livekit_api_key
    LIVEKIT_API_SECRET=your_livekit_api_secret
 
-   # Optional: Default Jellyfin configuration (can also be configured from Control Center UI)
-   JELLYFIN_URL=https://jellyfin.example.com
-   JELLYFIN_API_KEY=your_jellyfin_api_key
+   # Optional: Default Jellyfin configuration (configured directly in Alaap Control Center UI)
+   # Requires: Jellyfin Server URL, Jellyfin Account Username, and Password (No API key needed!)
    ```
 
 4. Create uploads directories with proper permissions:

@@ -70,30 +70,37 @@ export function SyncPlayProgressDashboard({
     }}>
       {/* Header Pipeline Stepper */}
       <div style={{ width: '100%', maxWidth: '540px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Tv size={20} style={{ color: 'var(--primary-light, #60a5fa)' }} className="animate-pulse" />
-            <span style={{ fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.9)' }}>
-              SyncPlay Download Pipeline
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+            <span style={{ fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              SyncPlay Download PipeLine
             </span>
           </div>
           <span style={{ 
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
             fontSize: '11px', 
             fontWeight: '600', 
-            padding: '3px 12px', 
+            padding: '4px 12px', 
             borderRadius: '12px',
             background: status === 'failed' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(37, 99, 235, 0.22)',
             color: status === 'failed' ? '#ef4444' : 'var(--primary-light, #60a5fa)',
-            border: `1px solid ${status === 'failed' ? 'rgba(239,68,68,0.4)' : 'rgba(96, 165, 250, 0.4)'}`
+            border: `1px solid ${status === 'failed' ? 'rgba(239,68,68,0.4)' : 'rgba(96, 165, 250, 0.4)'}`,
+            whiteSpace: 'nowrap',
+            flexShrink: 0
           }}>
-            {status === 'failed' ? 'FAILED' : (stageName || 'Processing')}
+            <Clock size={12} />
+            <span>
+              {status === 'failed' ? 'FAILED' : `Estimated Time: ${eta || (stage === 'downloading' ? 'Calculating...' : 'N/A')}`}
+            </span>
           </span>
         </div>
 
         {/* Multi-Stage Stepper Nodes */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
           gap: '10px',
           position: 'relative'
         }}>
@@ -165,15 +172,14 @@ export function SyncPlayProgressDashboard({
         </div>
       </div>
 
-      {/* Main Center Section: Radial Gauge Visualizer & Metrics */}
+      {/* Main Center Section: Radial Gauge Visualizer & Current Phase */}
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
-        justifyContent: 'center',
-        gap: '28px',
+        justifyContent: 'space-between',
+        gap: '20px',
         width: '100%',
-        maxWidth: '540px',
-        flexWrap: 'wrap'
+        maxWidth: '540px'
       }}>
         {/* Radial Progress Gauge */}
         <div style={{ position: 'relative', width: '110px', height: '110px', flexShrink: 0 }}>
@@ -225,80 +231,28 @@ export function SyncPlayProgressDashboard({
           </div>
         </div>
 
-        {/* Telemetry Metrics Grid */}
+        {/* Card: Current Phase (Fixed Width, Aligned with Boxes Above) */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '10px',
           flex: 1,
-          minWidth: '240px'
+          width: 0,
+          minWidth: 0,
+          background: '#0a152e',
+          border: '1px solid #16264c',
+          boxShadow: 'none',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          boxSizing: 'border-box',
+          overflow: 'hidden'
         }}>
-          {/* Card 1: Speed */}
-          <div style={{
-            background: '#0a152e',
-            border: '1px solid #16264c',
-            boxShadow: 'none',
-            borderRadius: '10px',
-            padding: '10px 14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '3px' }}>
-              <Zap size={13} style={{ color: '#f59e0b' }} />
-              <span>DOWNLOAD SPEED</span>
-            </div>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>
-              {speed || (stage === 'downloading' ? 'Calculating...' : 'N/A')}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '4px' }}>
+            <RefreshCw size={13} style={{ color: '#60a5fa', flexShrink: 0 }} className={status !== 'failed' ? 'animate-spin' : ''} />
+            <span>CURRENT PHASE</span>
           </div>
-
-          {/* Card 2: ETA */}
-          <div style={{
-            background: '#0a152e',
-            border: '1px solid #16264c',
-            boxShadow: 'none',
-            borderRadius: '10px',
-            padding: '10px 14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '3px' }}>
-              <Clock size={13} style={{ color: '#60a5fa' }} />
-              <span>ESTIMATED TIME</span>
-            </div>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>
-              {eta || (stage === 'downloading' ? 'Calculating...' : 'N/A')}
-            </div>
-          </div>
-
-          {/* Card 3: Size */}
-          <div style={{
-            background: '#0a152e',
-            border: '1px solid #16264c',
-            boxShadow: 'none',
-            borderRadius: '10px',
-            padding: '10px 14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '3px' }}>
-              <HardDrive size={13} style={{ color: '#10b981' }} />
-              <span>TOTAL SIZE</span>
-            </div>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>
-              {totalSize || 'Resolving...'}
-            </div>
-          </div>
-
-          {/* Card 4: Active Stage */}
-          <div style={{
-            background: '#0a152e',
-            border: '1px solid #16264c',
-            boxShadow: 'none',
-            borderRadius: '10px',
-            padding: '10px 14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginBottom: '3px' }}>
-              <RefreshCw size={13} style={{ color: '#60a5fa' }} className={status !== 'failed' ? 'animate-spin' : ''} />
-              <span>CURRENT PHASE</span>
-            </div>
-            <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {stageName || 'Processing'}
-            </div>
+          <div 
+            style={{ fontSize: '13px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}
+            title={stageName || 'Processing'}
+          >
+            {stageName || 'Processing'}
           </div>
         </div>
       </div>

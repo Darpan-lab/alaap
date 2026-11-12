@@ -9,12 +9,14 @@ export const getJellyfinConfig = async () => {
   const jellyfinUrl = await getSetting('jellyfinUrl', '');
   const jellyfinUsername = await getSetting('jellyfinUsername', '');
   const jellyfinPassword = await getSetting('jellyfinPassword', '');
+  const jellyfinApiKey = await getSetting('jellyfinApiKey', '');
   const cleanUrl = jellyfinUrl ? jellyfinUrl.replace(/\/+$/, '') : '';
   return {
     jellyfinUrl: cleanUrl,
     jellyfinUsername: jellyfinUsername ? jellyfinUsername.trim() : '',
     jellyfinPassword: jellyfinPassword ? jellyfinPassword.trim() : '',
-    isConfigured: !!(cleanUrl && jellyfinUsername)
+    jellyfinApiKey: jellyfinApiKey ? jellyfinApiKey.trim() : '',
+    isConfigured: !!(cleanUrl && (jellyfinUsername || jellyfinApiKey))
   };
 };
 
@@ -26,38 +28,114 @@ export const clearJellyfinCache = () => {
   cachedUserId = null;
 };
 
+export const makeAuthHeaders = (token, extraHeaders = {}) => {
+  const headers = {
+    'Accept': 'application/json',
+    ...extraHeaders
+  };
+  if (token) {
+    headers['Authorization'] = `MediaBrowser Token="${token}"`;
+    headers['X-Emby-Token'] = token;
+  }
+  return headers;
+};
+
 export const getJellyfinAuth = async (config) => {
   if (cachedToken && cachedUserId) {
     return { token: cachedToken, userId: cachedUserId };
   }
 
+  if (!config.jellyfinUrl) {
+    throw new Error('Jellyfin server URL is not configured. Please set it in Alaap Control Center.');
+  }
+
+  // 1. Try API Key authentication if provided or if password looks like an API key token
+  const candidateApiKey = config.jellyfinApiKey || (config.jellyfinPassword && /^[a-fA-F0-9]{32,}$/.test(config.jellyfinPassword) ? config.jellyfinPassword : null);
+
+  if (candidateApiKey) {
+    try {
+      const usersRes = await fetch(`${config.jellyfinUrl}/Users`, {
+        headers: makeAuthHeaders(candidateApiKey)
+      });
+      if (usersRes.ok) {
+        const usersList = await usersRes.json();
+        if (Array.isArray(usersList) && usersList.length > 0) {
+          let targetUser = null;
+          if (config.jellyfinUsername) {
+            targetUser = usersList.find(u => u.Name && u.Name.toLowerCase() === config.jellyfinUsername.toLowerCase());
+          }
+          if (!targetUser) {
+            targetUser = usersList.find(u => u.Policy?.IsAdministrator) || usersList[0];
+          }
+          cachedToken = candidateApiKey;
+          cachedUserId = targetUser.Id || targetUser.id;
+          return { token: cachedToken, userId: cachedUserId };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Jellyfin] API key test failed:', apiErr.message);
+    }
+  }
+
+  // 2. Try Username & Password authentication via AuthenticateByName
   if (!config.jellyfinUsername) {
-    throw new Error('Jellyfin account credentials are not configured. Please set them in Alaap Control Center.');
+    throw new Error('Please configure either a Jellyfin Account Username & Password, or an API Key in Alaap Control Center.');
   }
 
   const authUrl = `${config.jellyfinUrl}/Users/AuthenticateByName`;
+  const authHeader = 'MediaBrowser Client="Alaap", Device="Server", DeviceId="Alaap-Server-SyncPlay", Version="1.0.0"';
+
   const response = await fetch(authUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Emby-Authorization': 'MediaBrowser Client="Jellyfin Web", Device="Alaap", DeviceId="Alaap-Server", Version="10.8.0"'
+      'Accept': 'application/json',
+      'Authorization': authHeader,
+      'X-Emby-Authorization': authHeader
     },
     body: JSON.stringify({
       Username: config.jellyfinUsername,
-      Pw: config.jellyfinPassword
+      Pw: config.jellyfinPassword || ''
     })
   });
 
   if (!response.ok) {
     clearJellyfinCache();
     const errText = await response.text().catch(() => '');
-    console.error(`Jellyfin authentication error:`, response.status, errText);
-    throw new Error(`Jellyfin authentication failed for "${config.jellyfinUsername}". Check credentials in Alaap Control Center.`);
+    console.error(`Jellyfin authentication error (${response.status}):`, errText);
+
+    // If AuthenticateByName returned 400 or 401, check if config.jellyfinPassword was an API key
+    if (config.jellyfinPassword && config.jellyfinPassword !== candidateApiKey) {
+      try {
+        const fallbackRes = await fetch(`${config.jellyfinUrl}/Users`, {
+          headers: makeAuthHeaders(config.jellyfinPassword)
+        });
+        if (fallbackRes.ok) {
+          const uList = await fallbackRes.json();
+          if (Array.isArray(uList) && uList.length > 0) {
+            const targetUser = uList.find(u => u.Name && u.Name.toLowerCase() === config.jellyfinUsername.toLowerCase()) || uList[0];
+            cachedToken = config.jellyfinPassword;
+            cachedUserId = targetUser.Id || targetUser.id;
+            return { token: cachedToken, userId: cachedUserId };
+          }
+        }
+      } catch (e) {}
+    }
+
+    let detail = '';
+    if (response.status === 401) {
+      detail = 'Invalid username or password.';
+    } else if (response.status === 400) {
+      detail = `Jellyfin server rejected the request (HTTP 400): ${errText || 'Error processing request'}. Please check your credentials, or enter a Jellyfin API Key instead.`;
+    } else {
+      detail = errText || response.statusText;
+    }
+    throw new Error(`Jellyfin authentication failed for "${config.jellyfinUsername}": ${detail}`);
   }
 
   const data = await response.json();
   cachedToken = data.AccessToken;
-  cachedUserId = data.User.Id;
+  cachedUserId = data.User?.Id || data.User?.id;
   return { token: cachedToken, userId: cachedUserId };
 };
 
@@ -108,20 +186,21 @@ router.get('/status', auth, async (req, res) => {
 // POST /api/jellyfin/test - Test Jellyfin connection & account credentials
 router.post('/test', auth, async (req, res) => {
   try {
-    const { jellyfinUrl, jellyfinUsername, jellyfinPassword } = req.body;
+    const { jellyfinUrl, jellyfinUsername, jellyfinPassword, jellyfinApiKey } = req.body;
     let config;
-    if (jellyfinUrl && jellyfinUsername !== undefined) {
+    if (jellyfinUrl && (jellyfinUsername !== undefined || jellyfinApiKey !== undefined)) {
       config = {
         jellyfinUrl: jellyfinUrl.replace(/\/+$/, ''),
-        jellyfinUsername: jellyfinUsername.trim(),
-        jellyfinPassword: (jellyfinPassword && jellyfinPassword !== '********') ? jellyfinPassword.trim() : (await getSetting('jellyfinPassword', ''))
+        jellyfinUsername: jellyfinUsername ? jellyfinUsername.trim() : '',
+        jellyfinPassword: (jellyfinPassword && jellyfinPassword !== '********') ? jellyfinPassword.trim() : (await getSetting('jellyfinPassword', '')),
+        jellyfinApiKey: (jellyfinApiKey && jellyfinApiKey !== '********') ? jellyfinApiKey.trim() : (await getSetting('jellyfinApiKey', ''))
       };
     } else {
       config = await getJellyfinConfig();
     }
 
-    if (!config.jellyfinUrl || !config.jellyfinUsername) {
-      return res.status(400).json({ error: 'Please provide both Jellyfin Server Address and Account Username.' });
+    if (!config.jellyfinUrl || (!config.jellyfinUsername && !config.jellyfinApiKey)) {
+      return res.status(400).json({ error: 'Please provide Jellyfin Server Address and either Account Username or API Key.' });
     }
 
     clearJellyfinCache();
@@ -130,7 +209,7 @@ router.post('/test', auth, async (req, res) => {
     // Fetch views / granted libraries for this user
     const url = `${config.jellyfinUrl}/Users/${userId}/Views`;
     const response = await fetch(url, {
-      headers: { 'Authorization': `MediaBrowser Token="${token}"` }
+      headers: makeAuthHeaders(token)
     });
     
     if (!response.ok) {
@@ -142,7 +221,7 @@ router.post('/test', auth, async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully connected & authenticated as "${config.jellyfinUsername}"! Granted ${libraries.length} media ${libraries.length === 1 ? 'library' : 'libraries'}.`,
+      message: `Successfully connected & authenticated as "${config.jellyfinUsername || 'API User'}"! Granted ${libraries.length} media ${libraries.length === 1 ? 'library' : 'libraries'}.`,
       libraries
     });
   } catch (error) {
@@ -163,14 +242,14 @@ router.get('/libraries', auth, async (req, res) => {
     
     const url = `${config.jellyfinUrl}/Users/${userId}/Views`;
     let response = await fetch(url, {
-      headers: { 'Authorization': `MediaBrowser Token="${token}"` }
+      headers: makeAuthHeaders(token)
     });
     
     if (response.status === 401) {
       clearJellyfinCache();
       const freshAuth = await getJellyfinAuth(config);
       response = await fetch(url, {
-        headers: { 'Authorization': `MediaBrowser Token="${freshAuth.token}"` }
+        headers: makeAuthHeaders(freshAuth.token)
       });
     }
 
@@ -206,7 +285,7 @@ router.get('/items', auth, async (req, res) => {
     let url = '';
 
     const { token, userId } = await getJellyfinAuth(config);
-    const authHeader = { 'Authorization': `MediaBrowser Token="${token}"` };
+    const authHeader = makeAuthHeaders(token);
 
     if (type === 'Seasons' && parentId) {
       // Fetch Seasons for a Series
@@ -334,7 +413,7 @@ router.get('/image/:itemId', async (req, res) => {
     const { token } = await getJellyfinAuth(config);
     const imgUrl = `${config.jellyfinUrl}/Items/${req.params.itemId}/Images/${type}?fillWidth=400&fillHeight=600&quality=90`;
     const response = await fetch(imgUrl, {
-      headers: { 'Authorization': `MediaBrowser Token="${token}"` }
+      headers: makeAuthHeaders(token)
     });
 
     if (!response.ok) {
@@ -366,9 +445,7 @@ router.get('/stream/:itemId', async (req, res) => {
     // Use direct play (static stream) instead of transcoding
     const videoUrl = `${config.jellyfinUrl}/Videos/${req.params.itemId}/stream?static=true`;
 
-    const headers = {
-      'Authorization': `MediaBrowser Token="${token}"`
-    };
+    const headers = makeAuthHeaders(token);
     if (req.headers.range) {
       headers['Range'] = req.headers.range;
     }
@@ -403,7 +480,7 @@ router.get('/info/:itemId', auth, async (req, res) => {
     const { token, userId } = await getJellyfinAuth(config);
     const itemUrl = `${config.jellyfinUrl}/Users/${userId}/Items/${req.params.itemId}`;
     const response = await fetch(itemUrl, {
-      headers: { 'Authorization': `MediaBrowser Token="${token}"` }
+      headers: makeAuthHeaders(token)
     });
 
     if (!response.ok) {
